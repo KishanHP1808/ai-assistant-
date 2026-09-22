@@ -1,0 +1,29 @@
+# Environment variables
+.env
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Local SQLite Database
+data/*.db
+data/*.sqlite3
+*.db
+*.sqlite3
+
+# Generated reports
+reports/*.pdf
+reports/*.md
+!reports/.gitkeep
+
+# OS generated files
+.DS_Store
+Thumbs.db

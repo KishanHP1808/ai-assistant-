@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>✦ ResearchAI — Personal Research Assistant</title>
+  <meta name="description" content="AI-Powered Personal Research Assistant using LangChain, Tavily Web Search, and Multi-Agent Synthesis.">
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Marked.js for clean Markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <!-- Cinematic Entry Video Experience Overlay -->
+  <div id="introVideoOverlay" class="intro-video-overlay" role="dialog" aria-modal="true" aria-label="Welcome Intro Video">
+    <div class="intro-backdrop-blur"></div>
+    <div class="intro-ambient-glow"></div>
+
+    <div class="intro-modal-card">
+      <!-- Header Badge / Encouraging Banner -->
+      <div class="intro-top-banner">
+        <div class="intro-badge">
+          <span class="intro-badge-dot"></span>
+          <span class="intro-badge-text">✦ WELCOME TO RESEARCHAI ✦</span>
+        </div>
+        <div class="intro-tagline">
+          Igniting Deep Autonomous Intelligence &amp; Multi-Agent Synthesis
+        </div>
+      </div>
+
+      <!-- Video Screen Frame with Ambient Glow -->
+      <div class="intro-video-frame">
+        <video 
+          id="entryVideo" 
+          class="intro-video-element" 
+          src="/static/videos/intro.mp4" 
+          autoplay 
+          muted 
+          playsinline 
+          preload="auto"
+        ></video>
+        
+        <!-- Video Live Progress Bar -->
+        <div class="intro-progress-track">
+          <div id="introProgressBar" class="intro-progress-fill"></div>
+        </div>
+
+        <!-- Video Overlay Control Badges -->
+        <div class="intro-floating-controls">
+          <button id="introAudioToggleBtn" class="intro-pill-btn" type="button" title="Toggle Sound">
+            <span id="introAudioIcon">🔇</span>
+            <span id="introAudioText">Unmute</span>
+          </button>
+          <span class="intro-status-live">
+            <span class="pulse-ring"></span>
+            <span id="introLiveTimer">0:00 / 0:00</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Encouraging Motivational Footer / Action Strip -->
+      <div class="intro-bottom-strip">
+        <div class="intro-quote-box">
+          <div class="intro-quote-header">
+            <span class="intro-quote-icon">🚀</span>
+            <span class="intro-quote-title">Empowering Your Deep Research Journey</span>
+          </div>
+          <p class="intro-quote-desc" id="introQuoteText">
+            Watch the intro or enter directly to synthesize real-time web intelligence.
+          </p>
+        </div>
+
+        <div class="intro-actions">
+          <button id="skipIntroBtn" class="intro-skip-btn" type="button">
+            <span>Enter Dashboard</span>
+            <span class="btn-arrow">➔</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-container">
+
+    <!-- Header Navigation -->
+    <header class="app-header">
+      <div class="brand-group">
+        <div class="brand-badge">✦</div>
+        <div class="brand-text">
+          <h1 class="brand-title">ResearchAI</h1>
+          <p class="brand-subtitle">Personal Research Assistant</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <!-- Replay Intro Video Button -->
+        <button id="replayIntroBtn" class="btn-header-action" type="button" title="Watch Welcome Video">
+          <span class="header-action-icon">🎬</span>
+          <span class="header-action-label">Intro Video</span>
+        </button>
+
+        <!-- Google Cloud Logging Interface Button -->
+        <button id="googleLogsBtn" class="btn-header-action btn-gcp-logs" type="button" title="Open Google Cloud Logging Explorer">
+          <span class="header-action-icon">🪵</span>
+          <span class="header-action-label">Cloud Logs</span>
+          <span class="logs-live-badge" id="logsLiveBadge">Live</span>
+        </button>
+
+        <!-- Google Login / Identity Interface Button -->
+        <button id="googleAuthBtn" class="btn-header-action btn-google-login" type="button" title="Google Account Authentication">
+          <svg class="google-g-icon" viewBox="0 0 24 24" width="15" height="15">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+          <span class="header-action-label" id="googleAuthBtnLabel">Sign in</span>
+        </button>
+
+        <!-- Database Connected Pill -->
+        <div class="status-pill db-ready" id="dbStatusPill" title="Connected to local SQLite database (data/research.db)">
+          <span class="status-dot"></span>
+          <span class="status-label">SQLite Connected</span>
+        </div>
+
+        <!-- Configuration Status Pill -->
+        <div class="status-pill {% if has_tavily_key and has_openai_key %}ready{% else %}warning{% endif %}" id="systemStatusPill">
+          <span class="status-dot"></span>
+          <span class="status-label">
+            {% if has_tavily_key and has_openai_key %}
+              Ready ({{ model_name }})
+            {% else %}
+              API Keys Optional (Demo Ready)
+            {% endif %}
+          </span>
+        </div>
+
+        <!-- Theme Toggle Button -->
+        <button id="themeToggleBtn" class="theme-toggle-btn" aria-label="Toggle light or dark theme" title="Toggle theme">
+          <span class="theme-icon light-icon">☀️</span>
+          <span class="theme-icon dark-icon">🌙</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+
+      <!-- API Key Notice Banner (Conditional) -->
+      {% if not has_tavily_key or not has_openai_key %}
+      <section class="banner alert-banner" id="apiKeyAlert">
+        <div class="banner-icon">💡</div>
+        <div class="banner-content">
+          <h3>Database Connected &amp; Ready</h3>
+          <p>
+            Your local SQLite database is connected. You can test the application immediately with our pre-verified demonstration dossier or add your API keys (<code>TAVILY_API_KEY</code>, <code>OPENAI_API_KEY</code>) to <code>.env</code> for live web research.
+          </p>
+        </div>
+        <button type="button" class="btn-secondary" id="exploreDemoBannerBtn">Load Sample Dossier</button>
+      </section>
+      {% endif %}
+
+      <!-- Search & Input Section -->
+      <section class="hero-section" id="searchHero">
+        <div class="hero-badge">
+          <span class="sparkle">✦</span> MULTI-AGENT RESEARCH SYSTEM
+        </div>
+        <h2 class="hero-title">Research anything with AI</h2>
+        <p class="hero-description">
+          Three specialized AI agents formulate queries, scour authoritative web sources via Tavily,
+          synthesize grounded findings, and write citation-backed executive dossiers.
+        </p>
+
+        <!-- Search Input Box -->
+        <div class="search-card">
+          <form id="researchForm" class="search-form" onsubmit="return false;">
+            <div class="input-wrapper">
+              <span class="search-icon">🔍</span>
+              <input
+                type="text"
+                id="topicInput"
+                class="topic-input"
+                placeholder="Enter a research topic (e.g., Future of EV in India)..."
+                maxlength="300"
+                autocomplete="off"
+                required
+              />
+              <button type="button" id="clearInputBtn" class="clear-btn" title="Clear input" style="display: none;">✕</button>
+            </div>
+            <button type="submit" id="startBtn" class="btn-primary">
+              <span class="btn-text">Start Research</span>
+              <span class="btn-arrow">→</span>
+            </button>
+          </form>
+
+          <!-- Input Error Message -->
+          <div id="inputErrorMsg" class="input-error-msg" style="display: none;"></div>
+
+          <!-- Suggested Examples -->
+          <div class="suggestions-container">
+            <span class="suggestions-label">Try an example:</span>
+            <div class="suggestions-list">
+              <button class="suggestion-chip" data-topic="Future of EV in India">Future of EV in India</button>
+              <button class="suggestion-chip" data-topic="Impact of AI on Education">Impact of AI on Education</button>
+              <button class="suggestion-chip" data-topic="Future of Renewable Energy">Future of Renewable Energy</button>
+              <button class="suggestion-chip" data-topic="Cybersecurity Trends 2026">Cybersecurity Trends 2026</button>
+              <button class="suggestion-chip" data-topic="Space Exploration">Space Exploration</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Database Saved Dossiers History Panel -->
+        <div class="db-history-card" id="dbHistoryCard">
+          <div class="db-history-header">
+            <div class="db-history-title">
+              <span class="db-icon">🗄️</span>
+              <span>Saved in Database (<code>data/research.db</code>)</span>
+            </div>
+            <button type="button" class="btn-text-action" id="refreshHistoryBtn">Refresh</button>
+          </div>
+          <div class="db-history-list" id="dbHistoryList">
+            <!-- Dynamically populated from /api/history -->
+          </div>
+        </div>
+      </section>
+
+      <!-- Multi-Stage Progress Section (Hidden initially) -->
+      <section class="progress-section" id="progressSection" style="display: none;">
+        <div class="progress-card">
+          <!-- Tactical Reloading Hand & Power Chamber Visualizer -->
+          <div class="tactical-reload-container">
+            <div class="reload-hud-badge">
+              <span class="live-dot"></span> TACTICAL KNOWLEDGE RELOAD // MULTI-AGENT PIPELINE
+            </div>
+
+            <div class="reload-stage">
+              <!-- Holographic Scan Matrix & Background Grid -->
+              <div class="scan-grid"></div>
+              <div class="laser-scanner"></div>
+
+              <!-- Animated Reloading Hand & Magazine Housing SVG -->
+              <div class="hand-reload-scene">
+                <svg class="hand-reload-svg" viewBox="0 0 380 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <linearGradient id="cyberMetal" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stop-color="#334155" />
+                      <stop offset="50%" stop-color="#1e293b" />
+                      <stop offset="100%" stop-color="#0f172a" />
+                    </linearGradient>
+                    <linearGradient id="neonGlow" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stop-color="#38bdf8" />
+                      <stop offset="50%" stop-color="#6366f1" />
+                      <stop offset="100%" stop-color="#ec4899" />
+                    </linearGradient>
+                    <filter id="glowFilter" x="-20%" y="-20%" width="140%" height="140%">
+                      <feGaussianBlur stdDeviation="3" result="blur" />
+                      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                  </defs>
+
+                  <!-- Receiver / Gun & Chamber Housing -->
+                  <g class="receiver-assembly">
+                    <path d="M 40 35 L 240 35 L 260 58 L 260 105 L 195 105 L 180 82 L 40 82 Z" fill="url(#cyberMetal)" stroke="rgba(255,255,255,0.18)" stroke-width="2" />
+                    <rect x="55" y="46" width="120" height="24" rx="4" fill="#090d16" stroke="rgba(99,102,241,0.45)" stroke-width="1.5" />
+                    <!-- Chamber Bolt & Slide -->
+                    <g class="chamber-bolt">
+                      <rect x="60" y="50" width="30" height="16" rx="2" fill="#64748b" />
+                      <rect x="95" y="53" width="75" height="10" rx="2" fill="url(#neonGlow)" filter="url(#glowFilter)" opacity="0.85" />
+                    </g>
+                    <!-- Ejection Sparkle Indicator -->
+                    <circle cx="200" cy="45" r="3" fill="#fbbf24" class="ejection-spark" />
+                  </g>
+
+                  <!-- Reloading Hand & Energy Magazine Group -->
+                  <g class="hand-mag-group">
+                    <!-- Energy Cell / Magazine Clip with 5 Data Cells -->
+                    <g class="magazine-clip">
+                      <path d="M 170 95 L 210 95 L 196 155 L 156 155 Z" fill="url(#cyberMetal)" stroke="rgba(56,189,248,0.6)" stroke-width="1.5" />
+                      <!-- 5 Glowing Data Cells in Magazine -->
+                      <rect x="173" y="102" width="20" height="5" rx="2" fill="#38bdf8" filter="url(#glowFilter)" class="cell cell-1" />
+                      <rect x="170" y="111" width="20" height="5" rx="2" fill="#6366f1" filter="url(#glowFilter)" class="cell cell-2" />
+                      <rect x="167" y="120" width="20" height="5" rx="2" fill="#8b5cf6" filter="url(#glowFilter)" class="cell cell-3" />
+                      <rect x="164" y="129" width="20" height="5" rx="2" fill="#a855f7" filter="url(#glowFilter)" class="cell cell-4" />
+                      <rect x="161" y="138" width="20" height="5" rx="2" fill="#ec4899" filter="url(#glowFilter)" class="cell cell-5" />
+                    </g>
+
+                    <!-- Articulated Hand Gripping Magazine -->
+                    <g class="cyber-hand">
+                      <!-- Palm / Wrist -->
+                      <path d="M 120 160 L 165 125 L 195 135 L 150 170 Z" fill="#1e293b" stroke="rgba(255,255,255,0.25)" stroke-width="2" />
+                      <!-- Finger 1 -->
+                      <path d="M 160 110 Q 205 108 208 118" stroke="#cbd5e1" stroke-width="5.5" stroke-linecap="round" />
+                      <!-- Finger 2 -->
+                      <path d="M 157 121 Q 200 119 203 128" stroke="#94a3b8" stroke-width="5.5" stroke-linecap="round" />
+                      <!-- Finger 3 -->
+                      <path d="M 154 132 Q 195 130 199 139" stroke="#64748b" stroke-width="5.5" stroke-linecap="round" />
+                      <!-- Thumb Grip -->
+                      <path d="M 148 116 Q 168 100 179 104" stroke="#e2e8f0" stroke-width="6.5" stroke-linecap="round" />
+                      <!-- Hand Joint LED -->
+                      <circle cx="145" cy="142" r="3.5" fill="#38bdf8" filter="url(#glowFilter)" />
+                    </g>
+                  </g>
+
+                  <!-- Spark FX at Lock-In Point -->
+                  <g class="latch-sparks">
+                    <line x1="190" y1="95" x2="200" y2="85" stroke="#fbbf24" stroke-width="2" class="spark s1" />
+                    <line x1="190" y1="95" x2="205" y2="98" stroke="#38bdf8" stroke-width="2" class="spark s2" />
+                    <line x1="190" y1="95" x2="185" y2="82" stroke="#ffffff" stroke-width="2" class="spark s3" />
+                  </g>
+                </svg>
+              </div>
+
+              <!-- Real-time Live Chamber Gauge & Stress-Free Research Facts -->
+              <div class="reload-status-panel">
+                <div class="chamber-slots">
+                  <div class="slot-pill active" id="slot-1" title="Query Formulation">
+                    <span class="slot-light"></span>
+                    <span class="slot-label">CHAMBER 1: QUERY</span>
+                  </div>
+                  <div class="slot-pill" id="slot-2" title="Tavily Web Ingestion">
+                    <span class="slot-light"></span>
+                    <span class="slot-label">CHAMBER 2: TAVILY WEB</span>
+                  </div>
+                  <div class="slot-pill" id="slot-3" title="Metadata & Fact Extraction">
+                    <span class="slot-light"></span>
+                    <span class="slot-label">CHAMBER 3: EVIDENCE</span>
+                  </div>
+                  <div class="slot-pill" id="slot-4" title="Summary & Anti-Hallucination">
+                    <span class="slot-light"></span>
+                    <span class="slot-label">CHAMBER 4: SYNTHESIS</span>
+                  </div>
+                  <div class="slot-pill" id="slot-5" title="Executive Dossier Drafting">
+                    <span class="slot-light"></span>
+                    <span class="slot-label">CHAMBER 5: DOSSIER</span>
+                  </div>
+                </div>
+
+                <!-- Relaxing Rotating Research Tip -->
+                <div class="research-tip-banner">
+                  <span class="tip-icon">💡</span>
+                  <span class="tip-text" id="relaxingTipText">Scanning authoritative sources across live web indexes...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="progress-header">
+            <div class="pulsing-spinner"></div>
+            <div>
+              <h3 class="progress-title">Autonomous Research in Progress</h3>
+              <p class="progress-subtitle" id="currentStageMessage">Initializing agents...</p>
+            </div>
+          </div>
+
+          <!-- Progress Stepper -->
+          <div class="stepper">
+            <div class="step-item" id="step-1">
+              <div class="step-indicator">
+                <span class="step-icon">1</span>
+                <span class="step-spinner"></span>
+              </div>
+              <div class="step-details">
+                <div class="step-name">Researcher Agent</div>
+                <div class="step-desc">Understanding topic &amp; formulating queries</div>
+              </div>
+            </div>
+
+            <div class="step-item" id="step-2">
+              <div class="step-indicator">
+                <span class="step-icon">2</span>
+                <span class="step-spinner"></span>
+              </div>
+              <div class="step-details">
+                <div class="step-name">Tavily Web Search</div>
+                <div class="step-desc">Collecting ~5 authoritative sources</div>
+              </div>
+            </div>
+
+            <div class="step-item" id="step-3">
+              <div class="step-indicator">
+                <span class="step-icon">3</span>
+                <span class="step-spinner"></span>
+              </div>
+              <div class="step-details">
+                <div class="step-name">Source Analysis</div>
+                <div class="step-desc">Extracting facts, metrics, and domain metadata</div>
+              </div>
+            </div>
+
+            <div class="step-item" id="step-4">
+              <div class="step-indicator">
+                <span class="step-icon">4</span>
+                <span class="step-spinner"></span>
+              </div>
+              <div class="step-details">
+                <div class="step-name">Summarizer Agent</div>
+                <div class="step-desc">Synthesizing findings &amp; eliminating duplicates</div>
+              </div>
+            </div>
+
+            <div class="step-item" id="step-5">
+              <div class="step-indicator">
+                <span class="step-icon">5</span>
+                <span class="step-spinner"></span>
+              </div>
+              <div class="step-details">
+                <div class="step-name">Report Writer Agent</div>
+                <div class="step-desc">Drafting publication report with source citations</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Error State Banner (Hidden initially) -->
+      <section class="banner error-banner" id="errorBanner" style="display: none;">
+        <div class="banner-icon">⚠️</div>
+        <div class="banner-content">
+          <h3 id="errorTitle">Research could not be completed</h3>
+          <p id="errorMessage">We encountered an issue during research.</p>
+        </div>
+        <button type="button" class="btn-secondary" id="retryBtn">Try Again</button>
+      </section>
+
+      <!-- Results View (Hidden initially) -->
+      <section class="results-section" id="resultsSection" style="display: none;">
+
+        <!-- Results Toolbar -->
+        <div class="results-toolbar">
+          <div class="report-meta">
+            <span class="meta-badge">RESEARCH DOSSIER</span>
+            <h2 class="report-heading" id="reportHeadingTopic">Topic Title</h2>
+            <span class="meta-date" id="reportDate">September 2, 2026</span>
+          </div>
+
+          <div class="export-actions">
+            <button id="downloadPdfBtn" class="btn-action" title="Download Report as PDF">
+              <span class="action-icon">📄</span>
+              <span>Download PDF</span>
+            </button>
+            <button id="downloadMarkdownBtn" class="btn-action" title="Download Markdown Source">
+              <span class="action-icon">📝</span>
+              <span>Download Markdown</span>
+            </button>
+            <button id="newSearchBtn" class="btn-action secondary" title="Start New Research">
+              <span class="action-icon">🔄</span>
+              <span>New Research</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Two Column Layout: Report (Left) + Sources Sidebar (Right) -->
+        <div class="results-grid">
+
+          <!-- Left / Main: Rendered Markdown Report -->
+          <article class="report-viewer-card">
+            <!-- Header Bar with Estimated Reading Time and Copy Button -->
+            <div class="report-card-top-bar" id="reportCardTopBar">
+              <div class="report-reading-meta">
+                <span class="reading-time-pill" id="reportReadingTime" title="Estimated reading time">
+                  <span class="reading-time-icon">⏱️</span>
+                  <span class="reading-time-text" id="reportReadingTimeText">5 min read</span>
+                </span>
+                <span class="reading-words-count" id="reportWordCount">1,240 words</span>
+              </div>
+              <div class="report-card-actions">
+                <button type="button" class="btn-copy-report" id="copyReportBtn" title="Copy full report to clipboard">
+                  <span class="copy-icon" id="copyReportIcon">📋</span>
+                  <span class="copy-label" id="copyReportLabel">Copy to Clipboard</span>
+                </button>
+                <button type="button" class="btn-copy-report btn-share-email" id="shareEmailBtn" title="Share report via Email">
+                  <span class="copy-icon" id="shareEmailIcon">✉️</span>
+                  <span class="copy-label" id="shareEmailLabel">Share via Email</span>
+                </button>
+                <div class="report-card-badge">
+                  <span class="report-badge-dot"></span>
+                  <span>Executive Dossier</span>
+                </div>
+              </div>
+            </div>
+            <div class="card-inner" id="reportMarkdownContainer">
+              <!-- Rendered Markdown goes here -->
+            </div>
+          </article>
+
+          <!-- Right: Interactive Source Cards -->
+          <aside class="sources-sidebar">
+            <div class="sources-sidebar-header">
+              <div class="sources-count-badge">
+                <span>VERIFIED SOURCES (<span id="sourceCountNumber">5</span>)</span>
+              </div>
+              <p class="sources-sidebar-sub">All claims in the report reference these authoritative sources.</p>
+            </div>
+
+            <!-- Cards Container -->
+            <div class="source-cards-list" id="sourceCardsList">
+              <!-- Dynamically populated source cards -->
+            </div>
+          </aside>
+
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <span class="sparkle">✦</span>
+          <strong>Personal Research Assistant</strong>
+        </div>
+        <div class="footer-tech">
+          Powered by <strong>LangChain</strong> + <strong>Tavily Search API</strong> + <strong>FastAPI</strong>
+        </div>
+        <div class="footer-copy">
+          Autonomous Multi-Agent Synthesis • Anti-Hallucination Grounding
+        </div>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- Google Cloud Logging Console Interface -->
+  <div class="gcp-logs-modal-overlay" id="googleLogsModal" style="display: none;">
+    <div class="gcp-logs-container" role="dialog" aria-modal="true" aria-labelledby="gcpLogsTitle">
+      
+      <!-- GCP Console Header -->
+      <div class="gcp-logs-header">
+        <div class="gcp-logs-title-group">
+          <div class="gcp-cloud-logo">
+            <svg viewBox="0 0 24 24" width="22" height="22">
+              <path fill="#4285F4" d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="gcp-logs-title-row">
+              <h2 id="gcpLogsTitle" class="gcp-logs-title">Google Cloud Logging</h2>
+              <span class="gcp-project-tag">projects/researchai-assistant</span>
+            </div>
+            <p class="gcp-logs-subtitle">Logs Explorer • Real-time Agentic &amp; API Structured Telemetry</p>
+          </div>
+        </div>
+
+        <div class="gcp-logs-header-actions">
+          <button type="button" class="btn-gcp-action" id="refreshLogsBtn" title="Fetch latest logs">
+            <span>🔄</span> Refresh
+          </button>
+          <button type="button" class="btn-gcp-action" id="toggleAutoStreamBtn" title="Toggle real-time streaming">
+            <span class="stream-dot active" id="streamDot"></span> Auto-Stream
+          </button>
+          <button type="button" class="btn-gcp-action danger" id="clearLogsBtn" title="Clear log buffer">
+            <span>🗑️</span> Clear
+          </button>
+          <button type="button" class="btn-gcp-close" id="closeGoogleLogsBtn" aria-label="Close logs explorer">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- Filter & Search Toolbar -->
+      <div class="gcp-logs-toolbar">
+        <div class="gcp-filter-group">
+          <label for="logSeverityFilter" class="gcp-filter-label">Severity:</label>
+          <select id="logSeverityFilter" class="gcp-select">
+            <option value="ALL">All Severities</option>
+            <option value="INFO">INFO &amp; above</option>
+            <option value="NOTICE">NOTICE</option>
+            <option value="WARNING">WARNING</option>
+            <option value="ERROR">ERROR</option>
+            <option value="DEBUG">DEBUG</option>
+          </select>
+        </div>
+
+        <div class="gcp-search-group">
+          <span class="gcp-search-icon">🔍</span>
+          <input type="text" id="logSearchInput" class="gcp-search-input" placeholder="Filter by message, component, or trace ID...">
+        </div>
+
+        <div class="gcp-stats-pill">
+          <span id="logCountDisplay">0 entries</span>
+        </div>
+      </div>
+
+      <!-- Logs Stream View -->
+      <div class="gcp-logs-body" id="gcpLogsBody">
+        <div class="gcp-logs-empty" id="gcpLogsLoading">Loading structured telemetry logs...</div>
+        <div class="gcp-logs-list" id="gcpLogsList"></div>
+      </div>
+
+      <!-- Logs Footer -->
+      <div class="gcp-logs-footer">
+        <span class="gcp-footer-audit">Structured JSON Payload Format • Compliant with Cloud Logging API v2</span>
+        <button type="button" class="btn-gcp-export" id="downloadLogsJsonBtn">
+          <span>📥</span> Export JSON Logs
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Google Authentication Modal (Login Interface) -->
+  <div class="gcp-auth-modal-overlay" id="googleAuthModal" style="display: none;">
+    <div class="google-auth-card" role="dialog" aria-modal="true" aria-labelledby="googleAuthHeading">
+      <button type="button" class="btn-google-modal-close" id="closeGoogleAuthBtn" aria-label="Close">✕</button>
+      
+      <div class="google-auth-header">
+        <svg class="google-auth-g-logo" viewBox="0 0 24 24" width="40" height="40">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+        </svg>
+        <h2 id="googleAuthHeading" class="google-auth-title">Sign in with Google</h2>
+        <p class="google-auth-sub">Choose an account to continue with ResearchAI Workspace</p>
+      </div>
+
+      <div class="google-account-list">
+        <button type="button" class="google-account-item active-account" id="selectGoogleAccountBtn">
+          <div class="google-avatar-circle">K</div>
+          <div class="google-account-details">
+            <span class="google-account-name">Kishan H. P.</span>
+            <span class="google-account-email">kishanhp18@gmail.com</span>
+          </div>
+          <span class="google-account-badge">Active</span>
+        </button>
+      </div>
+
+      <div class="google-auth-footer-actions">
+        <button type="button" class="btn-google-primary" id="confirmGoogleSignInBtn">
+          Continue as Kishan
+        </button>
+        <button type="button" class="btn-google-text" id="toggleGoogleSignOutBtn" style="display: none;">
+          Sign out of Google Account
+        </button>
+      </div>
+
+      <p class="google-auth-disclaimer">
+        To continue, Google will share your name, email address, and profile picture with ResearchAI.
+      </p>
+    </div>
+  </div>
+
+  <!-- Application Script -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

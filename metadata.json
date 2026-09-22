@@ -1,0 +1,6 @@
+{
+  "name": "ResearchAI",
+  "description": "AI-Powered Personal Research Assistant using Multi-Agent Synthesis and Web Search.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
