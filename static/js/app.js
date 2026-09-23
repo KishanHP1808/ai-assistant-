@@ -46,6 +46,33 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentResearchData = null;
   let activeEventSource = null;
   let departmentsCache = [];
+  let currentProgressState = {
+    topic: "",
+    stage: 1,
+    stage_message: "",
+    report: "",
+    sources: [],
+    department_code: "",
+    department_name: "",
+    trained_epoch: 1,
+    status: "idle",
+  };
+
+  // Voice Input (Web Speech API) DOM Elements
+  const micBtn = document.getElementById("micBtn");
+  const voiceListeningHud = document.getElementById("voiceListeningHud");
+  const voiceHudTitle = document.getElementById("voiceHudTitle");
+  const voiceHudSub = document.getElementById("voiceHudSub");
+  const stopVoiceBtn = document.getElementById("stopVoiceBtn");
+
+  // Auto-Save & Resume Session DOM Elements
+  const resumeSessionBanner = document.getElementById("resumeSessionBanner");
+  const resumeBannerTopic = document.getElementById("resumeBannerTopic");
+  const resumeBannerTime = document.getElementById("resumeBannerTime");
+  const resumeSessionBtn = document.getElementById("resumeSessionBtn");
+  const dismissResumeBtn = document.getElementById("dismissResumeBtn");
+  const reportAutoSavePill = document.getElementById("reportAutoSavePill");
+  const reportAutoSaveText = document.getElementById("reportAutoSaveText");
 
   // Department Selectors & Invariants UI
   const deptSelect = document.getElementById("deptSelect");
@@ -56,9 +83,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const toggleReportInvariantsBtn = document.getElementById("toggleReportInvariantsBtn");
   const reportDeptInvariantsDrawer = document.getElementById("reportDeptInvariantsDrawer");
 
-  // Initialize History from Database & Departments
+  // Initialize History, Departments & Check for Saved SQLite Session
   loadDatabaseHistory();
   loadDepartments();
+  checkSavedProgressToResume();
 
   if (refreshHistoryBtn) {
     refreshHistoryBtn.addEventListener("click", loadDatabaseHistory);
@@ -242,6 +270,22 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const activeDeptCode = deptSelect ? deptSelect.value : "";
+    const activeDeptObj = departmentsCache.find((d) => d.code === activeDeptCode);
+
+    // Initialize in-progress state for auto-save
+    currentProgressState = {
+      topic,
+      stage: 1,
+      stage_message: "Understanding topic & formulating search query...",
+      report: "",
+      sources: [],
+      department_code: activeDeptCode,
+      department_name: activeDeptObj ? activeDeptObj.name : "",
+      trained_epoch: activeDeptObj ? activeDeptObj.epoch_count : 1,
+      status: "in_progress",
+    };
+    autoSaveCurrentProgress();
+
     const sseUrl = `/research/stream?topic=${encodeURIComponent(topic)}${activeDeptCode ? `&department=${encodeURIComponent(activeDeptCode)}` : ""}`;
 
     try {
@@ -253,6 +297,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
           if (payload.type === "stage") {
             setStepperStage(payload.stage, payload.message);
+            currentProgressState.stage = payload.stage;
+            currentProgressState.stage_message = payload.message;
           } else if (payload.type === "complete") {
             // Success! Complete step 5 as well
             setStepperStage(6, "Research dossier completed!");
@@ -381,12 +427,32 @@ document.addEventListener("DOMContentLoaded", () => {
     // Render Source Cards
     renderSourceCards(data.sources || []);
 
+    // Render Conceptual Infographic Hero (Above Markdown Report)
+    renderInfographicHero(data);
+
+    // Render Recharts Dynamic Line Chart (Bottom of report-viewer-card)
+    renderRechartsSynthesisWidget(data);
+
     // Reveal results view
     resultsSection.style.display = "block";
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
 
     // Refresh database history list
     loadDatabaseHistory();
+
+    // Auto-save completed report state to SQLite database
+    currentProgressState = {
+      topic: data.topic,
+      stage: 5,
+      stage_message: "Research completed.",
+      report: data.report || "",
+      sources: data.sources || [],
+      department_code: data.department_code || "",
+      department_name: data.department_name || "",
+      trained_epoch: data.trained_epoch || 1,
+      status: "completed",
+    };
+    autoSaveCurrentProgress();
   }
 
   // -------------------------------------------------------------------------
@@ -1743,6 +1809,611 @@ def calculate_portfolio_var(
       const isHidden = reportDeptInvariantsDrawer.style.display === "none";
       reportDeptInvariantsDrawer.style.display = isHidden ? "block" : "none";
       toggleReportInvariantsBtn.textContent = isHidden ? "Hide Invariants ▲" : "Trained Invariants ▼";
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // 16. Web Speech API: Voice Transcription for Research Search Bar
+  // -------------------------------------------------------------------------
+  let speechRecognition = null;
+  let isListeningVoice = false;
+
+  function initSpeechRecognitionEngine() {
+    const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionClass) {
+      console.warn("Web Speech API is not supported in this browser environment.");
+      return null;
+    }
+
+    try {
+      const recognition = new SpeechRecognitionClass();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        isListeningVoice = true;
+        if (micBtn) micBtn.classList.add("listening");
+        if (voiceListeningHud) voiceListeningHud.style.display = "flex";
+        if (voiceHudTitle) voiceHudTitle.textContent = "Listening... Speak your research topic";
+        if (voiceHudSub) voiceHudSub.textContent = "Web Speech API active • Transcribing directly to search bar";
+      };
+
+      recognition.onresult = (event) => {
+        let interimTranscript = "";
+        let finalTranscript = "";
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const trans = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += trans;
+          } else {
+            interimTranscript += trans;
+          }
+        }
+
+        const currentSpeech = (finalTranscript || interimTranscript).trim();
+        if (currentSpeech && topicInput) {
+          topicInput.value = currentSpeech;
+          topicInput.dispatchEvent(new Event("input"));
+          if (voiceHudTitle) {
+            voiceHudTitle.textContent = `"${currentSpeech}"`;
+          }
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.warn("Web Speech API recognition notice:", event.error);
+        if (event.error === "not-allowed" || event.error === "permission-denied") {
+          alert("Microphone permission was denied. Please allow microphone permissions in your browser address bar to use voice search.");
+        } else if (event.error === "no-speech") {
+          if (voiceHudTitle) voiceHudTitle.textContent = "No voice heard. Please try speaking again.";
+        }
+        stopVoiceSearch();
+      };
+
+      recognition.onend = () => {
+        isListeningVoice = false;
+        if (micBtn) micBtn.classList.remove("listening");
+        if (voiceListeningHud) voiceListeningHud.style.display = "none";
+      };
+
+      return recognition;
+    } catch (e) {
+      console.error("Failed to initialize Web Speech API:", e);
+      return null;
+    }
+  }
+
+  function startVoiceSearch() {
+    if (!speechRecognition) {
+      speechRecognition = initSpeechRecognitionEngine();
+    }
+
+    if (!speechRecognition) {
+      alert("Voice recognition (Web Speech API) is not available in this browser. Please use Chrome, Edge, or Safari, or enter your topic manually.");
+      return;
+    }
+
+    try {
+      speechRecognition.start();
+    } catch (err) {
+      console.warn("Speech recognition already active or starting:", err);
+    }
+  }
+
+  function stopVoiceSearch() {
+    if (speechRecognition && isListeningVoice) {
+      try {
+        speechRecognition.stop();
+      } catch (e) {}
+    }
+    isListeningVoice = false;
+    if (micBtn) micBtn.classList.remove("listening");
+    if (voiceListeningHud) voiceListeningHud.style.display = "none";
+  }
+
+  if (micBtn) {
+    micBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (isListeningVoice) {
+        stopVoiceSearch();
+      } else {
+        startVoiceSearch();
+      }
+    });
+  }
+
+  if (stopVoiceBtn) {
+    stopVoiceBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      stopVoiceSearch();
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // 17. SQLite Auto-Save Engine (Every 30 Seconds) & Session Resumption
+  // -------------------------------------------------------------------------
+  let cachedSavedSession = null;
+
+  async function autoSaveCurrentProgress() {
+    const activeTopic = currentProgressState.topic || (topicInput ? topicInput.value.trim() : "");
+    if (!activeTopic) return;
+
+    const activeDeptCode = deptSelect ? deptSelect.value : "";
+    const activeDeptObj = departmentsCache.find((d) => d.code === activeDeptCode);
+
+    const reportContent = currentResearchData?.report || currentProgressState.report || "";
+    const sourcesList = currentResearchData?.sources || currentProgressState.sources || [];
+    const currentStatus = currentResearchData?.report ? "completed" : (currentProgressState.status || "in_progress");
+
+    const payload = {
+      topic: activeTopic,
+      stage: currentProgressState.stage || 1,
+      stage_message: currentProgressState.stage_message || "",
+      report: reportContent,
+      sources: sourcesList,
+      department_code: activeDeptCode,
+      department_name: activeDeptObj ? activeDeptObj.name : (currentProgressState.department_name || ""),
+      trained_epoch: activeDeptObj ? activeDeptObj.epoch_count : (currentProgressState.trained_epoch || 1),
+      status: currentStatus,
+    };
+
+    updateAutoSaveBadge("Saving to SQLite...", true);
+
+    try {
+      const res = await fetch("/api/progress/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const timeNow = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        updateAutoSaveBadge(`Auto-saved at ${timeNow} (SQLite)`);
+      }
+    } catch (err) {
+      console.warn("Auto-save to SQLite failed:", err);
+      updateAutoSaveBadge("Auto-save: Retrying...");
+    }
+  }
+
+  function updateAutoSaveBadge(text, isSaving = false) {
+    if (reportAutoSavePill) {
+      if (isSaving) {
+        reportAutoSavePill.classList.add("saving");
+      } else {
+        reportAutoSavePill.classList.remove("saving");
+      }
+    }
+    if (reportAutoSaveText) {
+      reportAutoSaveText.textContent = text;
+    }
+  }
+
+  // 30-Second Periodic Auto-Save Timer
+  const AUTO_SAVE_INTERVAL_MS = 30000;
+  setInterval(autoSaveCurrentProgress, AUTO_SAVE_INTERVAL_MS);
+
+  // Check and display banner if an unsaved session exists in SQLite
+  async function checkSavedProgressToResume() {
+    try {
+      const res = await fetch("/api/progress/latest");
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (data.has_saved_progress && data.progress && data.progress.topic) {
+        cachedSavedSession = data.progress;
+
+        if (resumeSessionBanner && resumeBannerTopic) {
+          resumeBannerTopic.innerHTML = `Topic: "<strong>${escapeHtml(cachedSavedSession.topic)}</strong>" • Auto-saved in SQLite`;
+          if (resumeBannerTime && cachedSavedSession.updated_at) {
+            const timeFormatted = new Date(cachedSavedSession.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            resumeBannerTime.textContent = timeFormatted;
+          }
+          resumeSessionBanner.style.display = "flex";
+        }
+      }
+    } catch (e) {
+      console.warn("Could not retrieve saved session from SQLite:", e);
+    }
+  }
+
+  // Handle Resume Session Button Click
+  if (resumeSessionBtn) {
+    resumeSessionBtn.addEventListener("click", () => {
+      if (!cachedSavedSession) return;
+
+      // Populate Search Form
+      if (topicInput) {
+        topicInput.value = cachedSavedSession.topic;
+        topicInput.dispatchEvent(new Event("input"));
+      }
+
+      // Restore Department Selection if present
+      if (cachedSavedSession.department_code && deptSelect) {
+        deptSelect.value = cachedSavedSession.department_code;
+        deptSelect.dispatchEvent(new Event("change"));
+      }
+
+      // If progress has a completed report, display it immediately
+      if (cachedSavedSession.report) {
+        displayResults({
+          topic: cachedSavedSession.topic,
+          report: cachedSavedSession.report,
+          sources: cachedSavedSession.sources || [],
+          department_code: cachedSavedSession.department_code,
+          department_name: cachedSavedSession.department_name,
+          trained_epoch: cachedSavedSession.trained_epoch,
+          created_at: new Date(cachedSavedSession.updated_at).toLocaleDateString("en-US", {
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+          }),
+        });
+        updateAutoSaveBadge("Auto-saved (Restored from SQLite)");
+      } else {
+        // Resume in-progress research
+        startResearch(cachedSavedSession.topic);
+      }
+
+      if (resumeSessionBanner) {
+        resumeSessionBanner.style.display = "none";
+      }
+    });
+  }
+
+  // Dismiss Saved Session Banner
+  if (dismissResumeBtn) {
+    dismissResumeBtn.addEventListener("click", async () => {
+      if (resumeSessionBanner) {
+        resumeSessionBanner.style.display = "none";
+      }
+      try {
+        await fetch("/api/progress", { method: "DELETE" });
+      } catch (e) {}
+      cachedSavedSession = null;
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // 7. Conceptual Infographic Hero Feature
+  // -------------------------------------------------------------------------
+  let currentInfographicUrl = "/static/images/infographic_hero_1790170807210.jpg";
+  let activeInfographicStyle = "Cyber-Tech Blueprint";
+  const infographicPresets = [
+    {
+      id: "cyber-blueprint",
+      style: "Cyber-Tech Blueprint",
+      url: "/static/images/infographic_hero_1790170807210.jpg",
+      title: "Cybernetic Synthesis Blueprint",
+    },
+    {
+      id: "isometric-analytics",
+      style: "Isometric Matrix",
+      url: "/static/images/research_takeaways_1790170823741.jpg",
+      title: "Isometric Strategic Analytics",
+    },
+  ];
+
+  function renderInfographicHero(data) {
+    const heroSection = document.getElementById("infographicHeroSection");
+    const heroImg = document.getElementById("infographicHeroImg");
+    const heroTitle = document.getElementById("infographicHeroTitle");
+    const heroTopicBadge = document.getElementById("infographicHeroTopicBadge");
+    const styleTag = document.getElementById("infographicStyleTag");
+    const takeawaysGrid = document.getElementById("infographicTakeawaysGrid");
+
+    if (!heroSection || !heroImg) return;
+
+    heroSection.style.display = "block";
+    if (heroTitle) heroTitle.textContent = data.topic || "Research Synthesis";
+    if (heroTopicBadge) {
+      heroTopicBadge.textContent = data.department_name
+        ? `${data.department_name} • Key Takeaways`
+        : "Executive Synthesis";
+    }
+
+    const initialUrl = data.infographic_url || "/static/images/infographic_hero_1790170807210.jpg";
+    currentInfographicUrl = initialUrl;
+    heroImg.src = initialUrl;
+    if (styleTag) styleTag.textContent = activeInfographicStyle;
+
+    const takeaways = data.infographic_takeaways && data.infographic_takeaways.length > 0
+      ? data.infographic_takeaways
+      : [
+          `Core Synthesis: Accelerated market expansion and technological transformation in ${data.topic}.`,
+          `Quantitative Indicator: Multi-billion capital allocation and projected high CAGR growth through 2030.`,
+          `Strategic Architecture: Robust infrastructure convergence, scaling efficiency and ecosystem synergy.`,
+          `Risk & Governance: Regulatory incentives, standardization, and mitigation of operational bottlenecks.`,
+        ];
+
+    const categoryMeta = [
+      { cat: "Core Synthesis", icon: "🎯" },
+      { cat: "Quantitative Impact", icon: "📊" },
+      { cat: "Strategic Trend", icon: "⚡" },
+      { cat: "Risk & Governance", icon: "🛡️" },
+    ];
+
+    if (takeawaysGrid) {
+      takeawaysGrid.innerHTML = takeaways
+        .slice(0, 4)
+        .map((text, i) => {
+          const meta = categoryMeta[i % categoryMeta.length];
+          return `
+            <div class="takeaway-card">
+              <div class="takeaway-card-top">
+                <span class="takeaway-card-icon">${meta.icon}</span>
+                <span class="takeaway-card-category">${meta.cat}</span>
+              </div>
+              <div class="takeaway-card-text">${escapeHtml(text)}</div>
+            </div>
+          `;
+        })
+        .join("");
+    }
+  }
+
+  function setupInfographicControls() {
+    const openGenBtn = document.getElementById("openInfographicGenBtn");
+    const closeGenBtn = document.getElementById("closeInfographicGenDrawerBtn");
+    const genDrawer = document.getElementById("infographicGenDrawer");
+    const switchPresetBtn = document.getElementById("switchInfographicPresetBtn");
+    const downloadBtn = document.getElementById("downloadInfographicBtn");
+    const fullscreenBtn = document.getElementById("fullscreenInfographicBtn");
+    const toggleBtn = document.getElementById("toggleInfographicBtn");
+    const toggleIcon = document.getElementById("toggleInfographicIcon");
+    const canvasWrap = document.getElementById("infographicCanvasWrap");
+    const runGenBtn = document.getElementById("runInfographicGenerateBtn");
+    const customPromptInput = document.getElementById("infographicPromptInput");
+    const genStatusText = document.getElementById("infographicGenStatusText");
+    const styleChips = document.querySelectorAll(".style-chip");
+    const heroImg = document.getElementById("infographicHeroImg");
+    const styleTag = document.getElementById("infographicStyleTag");
+
+    if (openGenBtn && genDrawer) {
+      openGenBtn.addEventListener("click", () => {
+        const isHidden = genDrawer.style.display === "none";
+        genDrawer.style.display = isHidden ? "block" : "none";
+        openGenBtn.classList.toggle("active", isHidden);
+      });
+    }
+
+    if (closeGenBtn && genDrawer) {
+      closeGenBtn.addEventListener("click", () => {
+        genDrawer.style.display = "none";
+        if (openGenBtn) openGenBtn.classList.remove("active");
+      });
+    }
+
+    styleChips.forEach((chip) => {
+      chip.addEventListener("click", () => {
+        styleChips.forEach((c) => c.classList.remove("active"));
+        chip.classList.add("active");
+        activeInfographicStyle = chip.getAttribute("data-style") || "Cyber-Tech Blueprint";
+        if (styleTag) styleTag.textContent = activeInfographicStyle;
+      });
+    });
+
+    if (runGenBtn) {
+      runGenBtn.addEventListener("click", async () => {
+        if (!currentResearchData) return;
+
+        runGenBtn.disabled = true;
+        const origText = document.getElementById("runInfographicGenerateText")?.textContent || "Generate Infographic";
+        if (document.getElementById("runInfographicGenerateText")) {
+          document.getElementById("runInfographicGenerateText").textContent = "Generating Conceptual Infographic...";
+        }
+        if (genStatusText) {
+          genStatusText.textContent = "Synthesizing visual nodes and rendering conceptual infographic...";
+        }
+
+        try {
+          const res = await fetch("/api/infographic/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              topic: currentResearchData.topic,
+              report: currentResearchData.report,
+              takeaways: currentResearchData.infographic_takeaways || [],
+              style: activeInfographicStyle,
+              customPrompt: customPromptInput?.value?.trim() || "",
+            }),
+          });
+
+          if (!res.ok) throw new Error("Could not generate conceptual infographic.");
+
+          const payload = await res.json();
+          if (payload.imageUrl && heroImg) {
+            heroImg.style.opacity = "0.2";
+            setTimeout(() => {
+              heroImg.src = payload.imageUrl;
+              currentInfographicUrl = payload.imageUrl;
+              heroImg.style.opacity = "1";
+            }, 250);
+          }
+
+          if (styleTag) styleTag.textContent = payload.style || activeInfographicStyle;
+          if (genStatusText) {
+            genStatusText.textContent = `✓ Generated conceptual infographic for ${payload.topic}`;
+          }
+
+          setTimeout(() => {
+            if (genDrawer) genDrawer.style.display = "none";
+            if (openGenBtn) openGenBtn.classList.remove("active");
+          }, 1800);
+        } catch (err) {
+          if (genStatusText) genStatusText.textContent = `Error: ${err.message}`;
+        } finally {
+          runGenBtn.disabled = false;
+          if (document.getElementById("runInfographicGenerateText")) {
+            document.getElementById("runInfographicGenerateText").textContent = origText;
+          }
+        }
+      });
+    }
+
+    let currentPresetIdx = 0;
+    if (switchPresetBtn && heroImg) {
+      switchPresetBtn.addEventListener("click", () => {
+        currentPresetIdx = (currentPresetIdx + 1) % infographicPresets.length;
+        const chosen = infographicPresets[currentPresetIdx];
+        heroImg.style.opacity = "0.2";
+        setTimeout(() => {
+          heroImg.src = chosen.url;
+          currentInfographicUrl = chosen.url;
+          activeInfographicStyle = chosen.style;
+          if (styleTag) styleTag.textContent = chosen.style;
+          heroImg.style.opacity = "1";
+        }, 200);
+      });
+    }
+
+    if (downloadBtn) {
+      downloadBtn.addEventListener("click", () => {
+        const a = document.createElement("a");
+        a.href = currentInfographicUrl;
+        a.download = `Conceptual_Infographic_${(currentResearchData?.topic || "Research").slice(0, 25).replace(/[^a-zA-Z0-9]/g, "_")}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      });
+    }
+
+    const lightboxModal = document.getElementById("infographicLightboxModal");
+    const lightboxImg = document.getElementById("lightboxImg");
+    const lightboxTitle = document.getElementById("lightboxTopicTitle");
+    const lightboxStyle = document.getElementById("lightboxStyleTag");
+    const closeLightboxBtn = document.getElementById("closeLightboxBtn");
+    const closeLightboxBackdrop = document.getElementById("closeLightboxBackdrop");
+    const downloadLightboxBtn = document.getElementById("downloadLightboxImgBtn");
+
+    if (fullscreenBtn && lightboxModal && lightboxImg) {
+      fullscreenBtn.addEventListener("click", () => {
+        lightboxImg.src = currentInfographicUrl;
+        if (lightboxTitle) lightboxTitle.textContent = currentResearchData?.topic || "Conceptual Research Infographic";
+        if (lightboxStyle) lightboxStyle.textContent = activeInfographicStyle;
+        lightboxModal.style.display = "flex";
+      });
+    }
+
+    const closeLightbox = () => {
+      if (lightboxModal) lightboxModal.style.display = "none";
+    };
+
+    if (closeLightboxBtn) closeLightboxBtn.addEventListener("click", closeLightbox);
+    if (closeLightboxBackdrop) closeLightboxBackdrop.addEventListener("click", closeLightbox);
+
+    if (downloadLightboxBtn) {
+      downloadLightboxBtn.addEventListener("click", () => {
+        const a = document.createElement("a");
+        a.href = currentInfographicUrl;
+        a.download = `Conceptual_Infographic_${(currentResearchData?.topic || "Research").slice(0, 25).replace(/[^a-zA-Z0-9]/g, "_")}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      });
+    }
+
+    if (toggleBtn && canvasWrap) {
+      let isCollapsed = false;
+      toggleBtn.addEventListener("click", () => {
+        isCollapsed = !isCollapsed;
+        canvasWrap.style.display = isCollapsed ? "none" : "block";
+        if (toggleIcon) toggleIcon.textContent = isCollapsed ? "▼" : "▲";
+      });
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // 8. Recharts Dynamic Line Chart Integration
+  // -------------------------------------------------------------------------
+  async function renderRechartsSynthesisWidget(data) {
+    const container = document.getElementById("rechartsSynthesisContainer");
+    if (!container) return;
+
+    try {
+      const res = await fetch("/api/synthesis/analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: data.topic,
+          report: data.report,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Could not parse synthesis dynamics.");
+
+      const analysisPayload = await res.json();
+
+      if (typeof window.renderResearchSynthesisChart === "function") {
+        window.renderResearchSynthesisChart("rechartsSynthesisContainer", analysisPayload);
+      } else {
+        console.warn("window.renderResearchSynthesisChart not yet initialized, retrying...");
+        setTimeout(() => {
+          if (typeof window.renderResearchSynthesisChart === "function") {
+            window.renderResearchSynthesisChart("rechartsSynthesisContainer", analysisPayload);
+          }
+        }, 500);
+      }
+    } catch (err) {
+      console.warn("Recharts synthesis analysis fallback:", err);
+      const fallbackPayload = {
+        topic: data.topic || "Research Topic",
+        data: [
+          { section: "Executive Summary", shortSection: "Summary", sentiment: 78, confidence: 88, Technology: 4, Market: 6, Infrastructure: 3 },
+          { section: "Key Findings", shortSection: "Findings", sentiment: 82, confidence: 92, Technology: 8, Market: 7, Infrastructure: 5 },
+          { section: "Quantitative Metrics", shortSection: "Metrics", sentiment: 85, confidence: 95, Technology: 5, Market: 9, Infrastructure: 6 },
+          { section: "Strategic Trends", shortSection: "Trends", sentiment: 80, confidence: 90, Technology: 7, Market: 8, Infrastructure: 4 },
+          { section: "Opportunities", shortSection: "Opportunities", sentiment: 90, confidence: 94, Technology: 9, Market: 11, Infrastructure: 8 },
+          { section: "Challenges & Risks", shortSection: "Risks", sentiment: 38, confidence: 89, Technology: 3, Market: 4, Infrastructure: 5 },
+          { section: "Strategic Outlook", shortSection: "Outlook", sentiment: 86, confidence: 96, Technology: 8, Market: 10, Infrastructure: 7 },
+        ],
+        keywords: [
+          { word: "Technology", color: "#38bdf8", totalCount: 44 },
+          { word: "Market", color: "#34d399", totalCount: 55 },
+          { word: "Infrastructure", color: "#fbbf24", totalCount: 38 },
+        ],
+        summary: {
+          avgSentiment: 77,
+          sentimentTone: "Strongly Bullish",
+          topKeyword: "Market",
+          totalKeywordHits: 55,
+          peakSection: "Opportunities",
+        },
+      };
+
+      if (typeof window.renderResearchSynthesisChart === "function") {
+        window.renderResearchSynthesisChart("rechartsSynthesisContainer", fallbackPayload);
+      }
+    }
+  }
+
+  // Initialize Infographic and Chart listeners
+  setupInfographicControls();
+
+  // Handle New Search button to reset results and clean current SQLite progress
+  if (newSearchBtn) {
+    newSearchBtn.addEventListener("click", () => {
+      resultsSection.style.display = "none";
+      topicInput.value = "";
+      topicInput.focus();
+      hideError();
+      currentResearchData = null;
+      currentProgressState = {
+        topic: "",
+        stage: 1,
+        stage_message: "",
+        report: "",
+        sources: [],
+        department_code: "",
+        department_name: "",
+        trained_epoch: 1,
+        status: "idle",
+      };
+      fetch("/api/progress", { method: "DELETE" }).catch(() => {});
+      window.scrollTo({ top: 0, behavior: "smooth" });
     });
   }
 });

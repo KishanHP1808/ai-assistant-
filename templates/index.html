@@ -222,13 +222,61 @@
                 autocomplete="off"
                 required
               />
-              <button type="button" id="clearInputBtn" class="clear-btn" title="Clear input" style="display: none;">✕</button>
+              <div class="input-actions-group">
+                <!-- Voice Input Microphone Button (Web Speech API) -->
+                <button type="button" id="micBtn" class="mic-btn" title="Speak to enter research topic (Web Speech API)" aria-label="Voice input">
+                  <svg class="mic-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                  </svg>
+                  <span class="mic-pulse-ring"></span>
+                </button>
+                <button type="button" id="clearInputBtn" class="clear-btn" title="Clear input" style="display: none;">✕</button>
+              </div>
             </div>
             <button type="submit" id="startBtn" class="btn-primary">
               <span class="btn-text">Start Research</span>
               <span class="btn-arrow">→</span>
             </button>
           </form>
+
+          <!-- Voice Listening HUD (Animated when Mic is active) -->
+          <div class="voice-listening-hud" id="voiceListeningHud" style="display: none;">
+            <div class="voice-wave-anim">
+              <span class="wave-bar"></span>
+              <span class="wave-bar"></span>
+              <span class="wave-bar"></span>
+              <span class="wave-bar"></span>
+              <span class="wave-bar"></span>
+            </div>
+            <div class="voice-hud-info">
+              <div class="voice-hud-title" id="voiceHudTitle">Listening... speak your research topic</div>
+              <div class="voice-hud-sub" id="voiceHudSub">Web Speech API active • Transcribing directly to search input</div>
+            </div>
+            <button type="button" class="btn-stop-voice" id="stopVoiceBtn" title="Stop listening">Done</button>
+          </div>
+
+          <!-- Resume Saved Session from SQLite Banner -->
+          <div class="resume-session-banner" id="resumeSessionBanner" style="display: none;">
+            <div class="resume-banner-left">
+              <span class="resume-icon">💾</span>
+              <div>
+                <div class="resume-title">
+                  <span>Unsaved Research Progress Found</span>
+                  <span class="resume-sqlite-tag">SQLite (data/research.db)</span>
+                </div>
+                <div class="resume-topic" id="resumeBannerTopic">
+                  Topic: "..." • Auto-saved <span id="resumeBannerTime">recently</span>
+                </div>
+              </div>
+            </div>
+            <div class="resume-banner-actions">
+              <button type="button" class="btn-resume-session" id="resumeSessionBtn">Resume Session ➔</button>
+              <button type="button" class="btn-dismiss-resume" id="dismissResumeBtn" title="Dismiss saved session">✕</button>
+            </div>
+          </div>
 
           <!-- Input Error Message -->
           <div id="inputErrorMsg" class="input-error-msg" style="display: none;"></div>
@@ -509,6 +557,10 @@
                   <span class="copy-icon" id="shareEmailIcon">✉️</span>
                   <span class="copy-label" id="shareEmailLabel">Share via Email</span>
                 </button>
+                <div class="autosave-status-pill" id="reportAutoSavePill" title="Report progress automatically saved to SQLite database every 30 seconds">
+                  <span class="autosave-dot" id="reportAutoSaveDot"></span>
+                  <span id="reportAutoSaveText">Auto-save: Saved</span>
+                </div>
                 <div class="report-card-badge">
                   <span class="report-badge-dot"></span>
                   <span>Executive Dossier</span>
@@ -535,8 +587,121 @@
               </ul>
             </div>
 
+            <!-- Conceptual Infographic Hero Feature (Above Markdown Report) -->
+            <section class="infographic-hero-section" id="infographicHeroSection">
+              <div class="infographic-header-row">
+                <div class="infographic-badge-group">
+                  <span class="infographic-sparkle-dot"></span>
+                  <span class="infographic-badge-text">✦ CONCEPTUAL INFOGRAPHIC</span>
+                  <span class="infographic-sub-tag" id="infographicStyleTag">Cyber-Tech Blueprint</span>
+                </div>
+                <div class="infographic-actions-bar">
+                  <button type="button" class="btn-infographic-action" id="openInfographicGenBtn" title="Customize and generate conceptual infographic">
+                    <span class="btn-icon">🎨</span>
+                    <span>Generate Infographic</span>
+                  </button>
+                  <button type="button" class="btn-infographic-action secondary" id="switchInfographicPresetBtn" title="Switch conceptual layout preset">
+                    <span class="btn-icon">⇄</span>
+                    <span>Switch Concept</span>
+                  </button>
+                  <button type="button" class="btn-infographic-action secondary" id="downloadInfographicBtn" title="Download High-Res Infographic">
+                    <span class="btn-icon">⤓</span>
+                    <span>Download</span>
+                  </button>
+                  <button type="button" class="btn-infographic-action secondary" id="fullscreenInfographicBtn" title="View Fullscreen Lightbox">
+                    <span class="btn-icon">⛶</span>
+                  </button>
+                  <button type="button" class="btn-infographic-action secondary" id="toggleInfographicBtn" title="Collapse / Expand Hero Infographic">
+                    <span id="toggleInfographicIcon">▲</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Infographic AI Generator Controls Drawer (Collapsible) -->
+              <div class="infographic-generator-drawer" id="infographicGenDrawer" style="display: none;">
+                <div class="gen-drawer-header">
+                  <div class="drawer-title-row">
+                    <span class="drawer-icon">⚡</span>
+                    <span class="drawer-title">Generate Conceptual Infographic with Image AI</span>
+                  </div>
+                  <button type="button" class="btn-drawer-close" id="closeInfographicGenDrawerBtn">✕</button>
+                </div>
+                <div class="gen-drawer-body">
+                  <div class="style-selector-group">
+                    <label class="drawer-field-label">Visual Infographic Style:</label>
+                    <div class="style-chips-grid">
+                      <button type="button" class="style-chip active" data-style="Cyber-Tech Blueprint">
+                        <span class="style-chip-icon">⚡</span>
+                        <span>Cyber-Tech Blueprint</span>
+                      </button>
+                      <button type="button" class="style-chip" data-style="Isometric Matrix">
+                        <span class="style-chip-icon">🌐</span>
+                        <span>Isometric Matrix</span>
+                      </button>
+                      <button type="button" class="style-chip" data-style="Executive Clean Data">
+                        <span class="style-chip-icon">📊</span>
+                        <span>Executive Data</span>
+                      </button>
+                      <button type="button" class="style-chip" data-style="Neon Hologram Topology">
+                        <span class="style-chip-icon">🌌</span>
+                        <span>Hologram Topology</span>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="prompt-custom-row">
+                    <label for="infographicPromptInput" class="drawer-field-label">Custom Focus / Key Angle (Optional):</label>
+                    <input type="text" id="infographicPromptInput" class="infographic-custom-input" placeholder="e.g. Emphasize battery gigafactories and rapid charging..." />
+                  </div>
+                  <div class="gen-drawer-actions">
+                    <button type="button" class="btn-primary-generate" id="runInfographicGenerateBtn">
+                      <span class="btn-gen-sparkle">✦</span>
+                      <span id="runInfographicGenerateText">Generate Infographic with Image Tool</span>
+                    </button>
+                    <span class="gen-drawer-status" id="infographicGenStatusText">Ready to generate conceptual infographics</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Infographic Hero Visual Canvas -->
+              <div class="infographic-hero-canvas-wrap" id="infographicCanvasWrap">
+                <div class="infographic-image-frame" id="infographicImageFrame">
+                  <img
+                    id="infographicHeroImg"
+                    class="infographic-hero-img"
+                    src="/static/images/infographic_hero_1790170807210.jpg"
+                    alt="Conceptual Research Infographic"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div class="infographic-gradient-overlay"></div>
+                  <div class="infographic-overlay-title-box">
+                    <div class="infographic-topic-pill" id="infographicHeroTopicBadge">Strategic Synthesis</div>
+                    <h3 class="infographic-overlay-heading" id="infographicHeroTitle">Future of EV in India</h3>
+                    <div class="infographic-meta-info" id="infographicHeroMeta">Key Takeaways &amp; Executive Synthesis Map</div>
+                  </div>
+                </div>
+
+                <!-- Conceptual Key Takeaways Cards Row (Extracted from synthesis report) -->
+                <div class="infographic-takeaways-container" id="infographicTakeawaysContainer">
+                  <div class="takeaways-header-row">
+                    <span class="takeaways-section-label">SYNTHESIS KEY TAKEAWAYS</span>
+                    <span class="takeaways-counter-pill">4 Core Pillars</span>
+                  </div>
+                  <div class="takeaways-cards-grid" id="infographicTakeawaysGrid">
+                    <!-- Populated dynamically -->
+                  </div>
+                </div>
+              </div>
+            </section>
+
             <div class="card-inner" id="reportMarkdownContainer">
               <!-- Rendered Markdown goes here -->
+            </div>
+
+            <!-- Dynamic Recharts Line Chart Widget (Bottom of report-viewer-card) -->
+            <div class="report-chart-card-footer" id="reportChartCardFooter">
+              <div id="rechartsSynthesisContainer">
+                <!-- Dynamic Line Chart rendered by Recharts -->
+              </div>
             </div>
           </article>
 
@@ -898,6 +1063,29 @@
     </div>
   </div>
 
+  <!-- Lightbox Modal for Conceptual Infographic Fullscreen -->
+  <div id="infographicLightboxModal" class="infographic-lightbox-modal" style="display: none;" role="dialog" aria-modal="true" aria-label="Conceptual Infographic Fullscreen View">
+    <div class="lightbox-backdrop" id="closeLightboxBackdrop"></div>
+    <div class="lightbox-content-box">
+      <div class="lightbox-top-bar">
+        <div class="lightbox-title-area">
+          <span class="lightbox-sparkle">✦</span>
+          <span class="lightbox-title" id="lightboxTopicTitle">Conceptual Research Infographic</span>
+          <span class="lightbox-tag" id="lightboxStyleTag">16:9 Aspect Ratio</span>
+        </div>
+        <div class="lightbox-actions">
+          <button type="button" class="btn-lightbox-action" id="downloadLightboxImgBtn">⤓ Download JPEG</button>
+          <button type="button" class="btn-lightbox-close" id="closeLightboxBtn" title="Close Fullscreen">✕</button>
+        </div>
+      </div>
+      <div class="lightbox-img-wrapper">
+        <img id="lightboxImg" class="lightbox-img-element" src="/static/images/infographic_hero_1790170807210.jpg" alt="Conceptual Infographic Fullscreen" referrerPolicy="no-referrer" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Recharts & React Client Bundle -->
+  <script src="/static/js/chart-bundle.js"></script>
   <!-- Application Script -->
   <script src="/static/js/app.js"></script>
 </body>

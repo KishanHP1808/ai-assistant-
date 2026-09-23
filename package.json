@@ -3,21 +3,27 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "bundle:chart": "esbuild src/chart-entry.tsx --bundle --minify --format=iife --outfile=static/js/chart-bundle.js --define:process.env.NODE_ENV=\\\"production\\\"",
     "dev": "tsx server.ts",
     "lint": "tsc --noEmit",
-    "build": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "npm run bundle:chart && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs"
   },
   "dependencies": {
     "@google/genai": "*",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "pdfkit": "^0.16.0"
+    "pdfkit": "^0.16.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.2",
     "@types/pdfkit": "^0.13.8",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "esbuild": "^0.24.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
