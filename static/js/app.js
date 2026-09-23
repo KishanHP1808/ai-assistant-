@@ -45,9 +45,20 @@ document.addEventListener("DOMContentLoaded", () => {
   // State
   let currentResearchData = null;
   let activeEventSource = null;
+  let departmentsCache = [];
 
-  // Initialize History from Database
+  // Department Selectors & Invariants UI
+  const deptSelect = document.getElementById("deptSelect");
+  const deptTrainingStatusText = document.getElementById("deptTrainingStatusText");
+  const headerDeptEpochBadge = document.getElementById("headerDeptEpochBadge");
+  const deptTrainingBtn = document.getElementById("deptTrainingBtn");
+  const openTrainingStudioInlineBtn = document.getElementById("openTrainingStudioInlineBtn");
+  const toggleReportInvariantsBtn = document.getElementById("toggleReportInvariantsBtn");
+  const reportDeptInvariantsDrawer = document.getElementById("reportDeptInvariantsDrawer");
+
+  // Initialize History from Database & Departments
   loadDatabaseHistory();
+  loadDepartments();
 
   if (refreshHistoryBtn) {
     refreshHistoryBtn.addEventListener("click", loadDatabaseHistory);
@@ -230,7 +241,8 @@ document.addEventListener("DOMContentLoaded", () => {
       activeEventSource.close();
     }
 
-    const sseUrl = `/research/stream?topic=${encodeURIComponent(topic)}`;
+    const activeDeptCode = deptSelect ? deptSelect.value : "";
+    const sseUrl = `/research/stream?topic=${encodeURIComponent(topic)}${activeDeptCode ? `&department=${encodeURIComponent(activeDeptCode)}` : ""}`;
 
     try {
       activeEventSource = new EventSource(sseUrl);
@@ -272,11 +284,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function runFetchFallback(topic) {
     setStepperStage(2, "Searching authoritative web sources via Tavily...");
+    const activeDeptCode = deptSelect ? deptSelect.value : "";
     try {
       const response = await fetch("/research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic }),
+        body: JSON.stringify({ topic, department: activeDeptCode }),
       });
 
       if (!response.ok) {
@@ -320,6 +333,44 @@ document.addEventListener("DOMContentLoaded", () => {
     reportHeadingTopic.textContent = data.topic;
     reportDate.textContent = `Generated on ${data.created_at || "Recent"}`;
     sourceCountNumber.textContent = (data.sources || []).length;
+
+    // Display Department Model Badge & Invariants Banner if trained
+    const reportDeptBanner = document.getElementById("reportDeptBanner");
+    const reportDeptTitle = document.getElementById("reportDeptTitle");
+    const reportDeptSub = document.getElementById("reportDeptSub");
+    const reportDeptInvariantsDrawer = document.getElementById("reportDeptInvariantsDrawer");
+    const reportInvariantsList = document.getElementById("reportInvariantsList");
+
+    if (data.department_code) {
+      if (reportDeptBanner) reportDeptBanner.style.display = "flex";
+      if (reportDeptTitle) {
+        reportDeptTitle.textContent = `Specialized Department Model: ${data.department_code} (${data.department_name || ""})`;
+      }
+      if (reportDeptSub) {
+        reportDeptSub.textContent = `Synthesized with continuous code training memory (Epoch #${data.trained_epoch || 1})`;
+      }
+
+      const dept = departmentsCache.find((d) => d.code === data.department_code);
+      if (dept && reportInvariantsList) {
+        const allRules = [];
+        dept.training_entries.forEach((e) => {
+          e.extracted_rules.forEach((r) => {
+            allRules.push({ title: e.title, rule: r, lang: e.language });
+          });
+        });
+
+        if (allRules.length > 0) {
+          reportInvariantsList.innerHTML = allRules
+            .map((r) => `<li class="invariant-item"><strong>[${escapeHtml(r.lang.toUpperCase())}]</strong> ${escapeHtml(r.rule)} <span style="opacity:0.65;font-size:0.75rem;">(${escapeHtml(r.title)})</span></li>`)
+            .join("");
+        } else {
+          reportInvariantsList.innerHTML = `<li class="invariant-item">No specialized code checkpoints saved yet for this department.</li>`;
+        }
+      }
+    } else {
+      if (reportDeptBanner) reportDeptBanner.style.display = "none";
+      if (reportDeptInvariantsDrawer) reportDeptInvariantsDrawer.style.display = "none";
+    }
 
     // Calculate and display estimated reading time (e.g., '5 min read')
     updateReadingTime(data.report);
@@ -1134,5 +1185,565 @@ document.addEventListener("DOMContentLoaded", () => {
       dismissIntroVideo();
     }
   });
+
+  // -------------------------------------------------------------------------
+  // 13. Department Code Training Studio Controller
+  // -------------------------------------------------------------------------
+  const deptTrainingModal = document.getElementById("deptTrainingModal");
+  const closeDeptTrainingModalBtn = document.getElementById("closeDeptTrainingModalBtn");
+  const closeDeptStudioBottomBtn = document.getElementById("closeDeptStudioBottomBtn");
+  const modalDeptSelect = document.getElementById("modalDeptSelect");
+
+  const toggleNewDeptFormBtn = document.getElementById("toggleNewDeptFormBtn");
+  const newDeptBox = document.getElementById("newDeptBox");
+  const newDeptCodeInput = document.getElementById("newDeptCodeInput");
+  const newDeptNameInput = document.getElementById("newDeptNameInput");
+  const newDeptDescInput = document.getElementById("newDeptDescInput");
+  const confirmCreateDeptBtn = document.getElementById("confirmCreateDeptBtn");
+  const cancelCreateDeptBtn = document.getElementById("cancelCreateDeptBtn");
+
+  const trainCodeForm = document.getElementById("trainCodeForm");
+  const codeTitleInput = document.getElementById("codeTitleInput");
+  const codeLanguageSelect = document.getElementById("codeLanguageSelect");
+  const codeNotesInput = document.getElementById("codeNotesInput");
+  const codeSnippetTextarea = document.getElementById("codeSnippetTextarea");
+  const codeLengthCharCount = document.getElementById("codeLengthCharCount");
+  const submitTrainCodeBtn = document.getElementById("submitTrainCodeBtn");
+  const submitTrainBtnText = document.getElementById("submitTrainBtnText");
+
+  const trainingLiveHud = document.getElementById("trainingLiveHud");
+  const trainingHudPhase = document.getElementById("trainingHudPhase");
+  const trainingHudBarFill = document.getElementById("trainingHudBarFill");
+  const trainingHudMeta = document.getElementById("trainingHudMeta");
+
+  const trainingSuccessCard = document.getElementById("trainingSuccessCard");
+  const trainingSuccessTitle = document.getElementById("trainingSuccessTitle");
+  const trainingSuccessDesc = document.getElementById("trainingSuccessDesc");
+  const dismissTrainingSuccessBtn = document.getElementById("dismissTrainingSuccessBtn");
+
+  const deptCheckpointsTitle = document.getElementById("deptCheckpointsTitle");
+  const deptEpochCountBadge = document.getElementById("deptEpochCountBadge");
+  const refreshCheckpointsBtn = document.getElementById("refreshCheckpointsBtn");
+  const deptSummaryName = document.getElementById("deptSummaryName");
+  const deptSummaryDesc = document.getElementById("deptSummaryDesc");
+  const deptMetricCheckpoints = document.getElementById("deptMetricCheckpoints");
+  const deptMetricRules = document.getElementById("deptMetricRules");
+  const deptMetricTokens = document.getElementById("deptMetricTokens");
+  const checkpointsListContainer = document.getElementById("checkpointsListContainer");
+
+  // Sample Code Definitions
+  const CODE_SAMPLES = {
+    circuit_breaker: {
+      title: "Resilient Circuit Breaker with Exponential Backoff & Jitter",
+      language: "python",
+      notes: "Enforces 3-strike isolation, sub-50ms fail-fast, full jitter backoff, and idempotent retries",
+      code: `import time
+import random
+from enum import Enum
+from typing import Callable, Any
+
+class CircuitState(Enum):
+    CLOSED = "CLOSED"
+    OPEN = "OPEN"
+    HALF_OPEN = "HALF_OPEN"
+
+class CircuitBreakerOpenException(Exception):
+    pass
+
+class CircuitBreaker:
+    """
+    Departmental Invariant: Resilient zero-downtime microservice circuit breaker.
+    Guarantees graceful degradation during partial outages.
+    """
+    def __init__(self, failure_threshold: int = 3, recovery_time: float = 10.0):
+        self.failure_threshold = failure_threshold
+        self.recovery_time = recovery_time
+        self.failure_count = 0
+        self.state = CircuitState.CLOSED
+        self.last_state_change = time.time()
+
+    def call(self, func: Callable, *args, **kwargs) -> Any:
+        now = time.time()
+        if self.state == CircuitState.OPEN:
+            if now - self.last_state_change > self.recovery_time:
+                self.state = CircuitState.HALF_OPEN
+            else:
+                raise CircuitBreakerOpenException("Circuit OPEN: fast-failing traffic")
+
+        try:
+            result = func(*args, **kwargs)
+            self._handle_success()
+            return result
+        except Exception as e:
+            self._handle_failure()
+            raise e
+
+    def _handle_success(self):
+        self.failure_count = 0
+        self.state = CircuitState.CLOSED
+
+    def _handle_failure(self):
+        self.failure_count += 1
+        if self.failure_count >= self.failure_threshold:
+            self.state = CircuitState.OPEN
+            self.last_state_change = time.time()`
+    },
+    vector_rag: {
+      title: "Vector Similarity Index & Chunk Retrieval",
+      language: "typescript",
+      notes: "Cosine similarity calculation with sub-5ms chunk retrieval and memory caching",
+      code: `export interface VectorChunk {
+  id: string;
+  embedding: number[];
+  text: string;
+  metadata: Record<string, any>;
+}
+
+export class InMemoryVectorIndex {
+  private chunks: VectorChunk[] = [];
+
+  public insert(chunk: VectorChunk): void {
+    this.chunks.push(chunk);
+  }
+
+  public query(queryEmbedding: number[], topK: number = 5): { chunk: VectorChunk; score: number }[] {
+    return this.chunks
+      .map(chunk => ({
+        chunk,
+        score: this.cosineSimilarity(queryEmbedding, chunk.embedding)
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
+  }
+
+  private cosineSimilarity(a: number[], b: number[]): number {
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB) || 1e-9);
+  }
+}`
+    },
+    risk_model: {
+      title: "Monte Carlo Value-at-Risk (VaR) Engine",
+      language: "python",
+      notes: "Enforces Basel III regulatory capital limits, 99% confidence VaR, and tail risk buffers",
+      code: `import numpy as np
+
+def calculate_portfolio_var(
+    portfolio_value: float,
+    mean_return: float,
+    std_dev: float,
+    confidence_level: float = 0.99,
+    simulations: int = 10000
+) -> dict:
+    """
+    Departmental Invariant: Quant Risk Basel-III Regulatory VaR Simulator.
+    Calculates 1-day Value at Risk (VaR) and Conditional VaR (Expected Shortfall).
+    """
+    simulated_returns = np.random.normal(mean_return, std_dev, simulations)
+    cutoff_percentile = (1 - confidence_level) * 100
+    var_percentile = np.percentile(simulated_returns, cutoff_percentile)
+    
+    var_dollar = portfolio_value * abs(var_percentile)
+    expected_shortfall = portfolio_value * abs(simulated_returns[simulated_returns <= var_percentile].mean())
+    
+    return {
+        "confidence_level": confidence_level,
+        "var_dollar": round(float(var_dollar), 2),
+        "expected_shortfall": round(float(expected_shortfall), 2),
+        "regulatory_buffer_required": round(float(var_dollar * 1.15), 2)
+    }`
+    }
+  };
+
+  // Open & Close Modal
+  function openDeptModal() {
+    if (!deptTrainingModal) return;
+    deptTrainingModal.style.display = "flex";
+    if (deptSelect && modalDeptSelect) {
+      modalDeptSelect.value = deptSelect.value;
+      const activeDept = departmentsCache.find((d) => d.code === deptSelect.value);
+      if (activeDept) renderDepartmentDetails(activeDept);
+    }
+  }
+
+  function closeDeptModal() {
+    if (!deptTrainingModal) return;
+    deptTrainingModal.style.display = "none";
+  }
+
+  if (deptTrainingBtn) deptTrainingBtn.addEventListener("click", openDeptModal);
+  if (openTrainingStudioInlineBtn) openTrainingStudioInlineBtn.addEventListener("click", openDeptModal);
+  if (closeDeptTrainingModalBtn) closeDeptTrainingModalBtn.addEventListener("click", closeDeptModal);
+  if (closeDeptStudioBottomBtn) closeDeptStudioBottomBtn.addEventListener("click", closeDeptModal);
+
+  // Load Departments from Backend
+  async function loadDepartments(preferredCode) {
+    try {
+      const res = await fetch("/api/departments");
+      if (!res.ok) return;
+      const data = await res.json();
+      departmentsCache = data.departments || [];
+
+      if (departmentsCache.length === 0) return;
+
+      const currentSelected = preferredCode || (deptSelect ? deptSelect.value : "") || departmentsCache[0].code;
+
+      // Populate Search Bar dropdown
+      if (deptSelect) {
+        deptSelect.innerHTML = departmentsCache
+          .map((d) => `<option value="${escapeHtml(d.code)}">${escapeHtml(d.code)} — ${escapeHtml(d.name)}</option>`)
+          .join("");
+        deptSelect.value = currentSelected;
+      }
+
+      // Populate Modal dropdown
+      if (modalDeptSelect) {
+        modalDeptSelect.innerHTML = departmentsCache
+          .map((d) => `<option value="${escapeHtml(d.code)}">${escapeHtml(d.code)} — ${escapeHtml(d.name)} (Epoch #${d.epoch_count})</option>`)
+          .join("");
+        modalDeptSelect.value = currentSelected;
+      }
+
+      updateSelectedDepartmentUI(currentSelected);
+    } catch (e) {
+      console.warn("Failed to load departments:", e);
+    }
+  }
+
+  function updateSelectedDepartmentUI(code) {
+    const dept = departmentsCache.find((d) => d.code === code) || departmentsCache[0];
+    if (!dept) return;
+
+    if (deptTrainingStatusText) {
+      const checkpointsCount = dept.training_entries.length;
+      deptTrainingStatusText.textContent = `Trained on ${checkpointsCount} code checkpoint${checkpointsCount === 1 ? "" : "s"} (Epoch #${dept.epoch_count})`;
+    }
+
+    if (headerDeptEpochBadge) {
+      headerDeptEpochBadge.textContent = `${dept.code} (${dept.epoch_count})`;
+    }
+
+    renderDepartmentDetails(dept);
+  }
+
+  if (deptSelect) {
+    deptSelect.addEventListener("change", () => {
+      const code = deptSelect.value;
+      if (modalDeptSelect) modalDeptSelect.value = code;
+      updateSelectedDepartmentUI(code);
+    });
+  }
+
+  if (modalDeptSelect) {
+    modalDeptSelect.addEventListener("change", () => {
+      const code = modalDeptSelect.value;
+      if (deptSelect) deptSelect.value = code;
+      updateSelectedDepartmentUI(code);
+    });
+  }
+
+  // Render Department Details & Checkpoints
+  function renderDepartmentDetails(dept) {
+    if (!dept) return;
+
+    if (deptCheckpointsTitle) {
+      deptCheckpointsTitle.textContent = `${dept.code} Memory`;
+    }
+    if (deptEpochCountBadge) {
+      deptEpochCountBadge.textContent = `Epoch #${dept.epoch_count}`;
+    }
+    if (deptSummaryName) {
+      deptSummaryName.textContent = dept.name;
+    }
+    if (deptSummaryDesc) {
+      deptSummaryDesc.textContent = dept.description || "Continuous domain code training and architectural constraints.";
+    }
+
+    const totalRules = dept.training_entries.reduce((acc, e) => acc + (e.extracted_rules?.length || 0), 0);
+    const totalTokens = dept.training_entries.reduce((acc, e) => acc + (e.token_count || 0), 0);
+
+    if (deptMetricCheckpoints) deptMetricCheckpoints.textContent = dept.training_entries.length;
+    if (deptMetricRules) deptMetricRules.textContent = totalRules;
+    if (deptMetricTokens) deptMetricTokens.textContent = totalTokens;
+
+    // Render Checkpoint Cards
+    if (!checkpointsListContainer) return;
+
+    if (dept.training_entries.length === 0) {
+      checkpointsListContainer.innerHTML = `
+        <div style="text-align:center;padding:2rem;color:var(--text-muted);font-size:0.82rem;">
+          No code checkpoints ingested yet for <strong>${escapeHtml(dept.code)}</strong>.<br>
+          Enter code in the editor on the left to start training!
+        </div>
+      `;
+      return;
+    }
+
+    checkpointsListContainer.innerHTML = dept.training_entries
+      .map((entry, idx) => {
+        const rulesHtml = (entry.extracted_rules || [])
+          .map((r) => `<div class="checkpoint-rule-chip">${escapeHtml(r)}</div>`)
+          .join("");
+
+        return `
+          <div class="checkpoint-card" id="checkpointCard-${entry.id}">
+            <div class="checkpoint-header">
+              <span class="checkpoint-title">${escapeHtml(entry.title || `Checkpoint #${idx + 1}`)}</span>
+              <div class="checkpoint-badges">
+                <span class="checkpoint-lang-badge">${escapeHtml(entry.language.toUpperCase())}</span>
+                <span class="checkpoint-epoch-badge">Epoch #${entry.epoch}</span>
+              </div>
+            </div>
+
+            <div class="checkpoint-rules-box">
+              ${rulesHtml}
+            </div>
+
+            <div class="checkpoint-footer">
+              <span>~${entry.token_count} tokens • ${new Date(entry.timestamp).toLocaleDateString()}</span>
+              <div>
+                <button type="button" class="btn-sample-code" onclick="document.getElementById('codePreview-${entry.id}').style.display = document.getElementById('codePreview-${entry.id}').style.display === 'none' ? 'block' : 'none'">View Code</button>
+                <button type="button" class="btn-del-checkpoint" onclick="window.deleteDepartmentCheckpoint('${escapeHtml(dept.code)}', '${escapeHtml(entry.id)}')">✕</button>
+              </div>
+            </div>
+
+            <div class="checkpoint-code-preview" id="codePreview-${entry.id}" style="display:none;">${escapeHtml(entry.code_snippet)}</div>
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  // Delete Checkpoint Handler
+  window.deleteDepartmentCheckpoint = async (deptCode, entryId) => {
+    if (!confirm(`Are you sure you want to remove this trained checkpoint from ${deptCode}?`)) return;
+
+    try {
+      const res = await fetch(`/api/departments/${encodeURIComponent(deptCode)}/training/${encodeURIComponent(entryId)}`, {
+        method: "DELETE"
+      });
+      if (!res.ok) throw new Error("Failed to delete checkpoint");
+      const data = await res.json();
+      
+      // Update cache
+      const idx = departmentsCache.findIndex((d) => d.code === deptCode);
+      if (idx !== -1) departmentsCache[idx] = data.department;
+
+      updateSelectedDepartmentUI(deptCode);
+    } catch (err) {
+      alert(`Error deleting checkpoint: ${err.message}`);
+    }
+  };
+
+  // Toggle New Department Inline Box
+  if (toggleNewDeptFormBtn && newDeptBox) {
+    toggleNewDeptFormBtn.addEventListener("click", () => {
+      newDeptBox.style.display = newDeptBox.style.display === "none" ? "flex" : "none";
+      if (newDeptBox.style.display === "flex" && newDeptCodeInput) {
+        newDeptCodeInput.focus();
+      }
+    });
+  }
+
+  if (cancelCreateDeptBtn && newDeptBox) {
+    cancelCreateDeptBtn.addEventListener("click", () => {
+      newDeptBox.style.display = "none";
+    });
+  }
+
+  if (confirmCreateDeptBtn) {
+    confirmCreateDeptBtn.addEventListener("click", async () => {
+      const code = (newDeptCodeInput ? newDeptCodeInput.value : "").trim().toUpperCase();
+      const name = (newDeptNameInput ? newDeptNameInput.value : "").trim();
+      const description = (newDeptDescInput ? newDeptDescInput.value : "").trim();
+
+      if (!code || !name) {
+        alert("Please specify both a department code (e.g. CYBER-01) and a department name.");
+        return;
+      }
+
+      try {
+        confirmCreateDeptBtn.disabled = true;
+        const res = await fetch("/api/departments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code, name, description }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to create department");
+        }
+
+        const newDept = await res.json();
+        if (newDeptBox) newDeptBox.style.display = "none";
+        if (newDeptCodeInput) newDeptCodeInput.value = "";
+        if (newDeptNameInput) newDeptNameInput.value = "";
+        if (newDeptDescInput) newDeptDescInput.value = "";
+
+        await loadDepartments(newDept.code);
+      } catch (err) {
+        alert(`Error: ${err.message}`);
+      } finally {
+        confirmCreateDeptBtn.disabled = false;
+      }
+    });
+  }
+
+  // Code Snippet Character & Token Counter
+  if (codeSnippetTextarea && codeLengthCharCount) {
+    codeSnippetTextarea.addEventListener("input", () => {
+      const chars = codeSnippetTextarea.value.length;
+      const tokens = Math.ceil(chars / 4);
+      codeLengthCharCount.textContent = `${chars.toLocaleString()} characters (~${tokens.toLocaleString()} tokens)`;
+    });
+  }
+
+  // Load Sample Code Buttons
+  document.querySelectorAll(".btn-sample-code[data-sample]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const sampleKey = btn.getAttribute("data-sample");
+      const sample = CODE_SAMPLES[sampleKey];
+      if (!sample) return;
+
+      if (codeTitleInput) codeTitleInput.value = sample.title;
+      if (codeLanguageSelect) codeLanguageSelect.value = sample.language;
+      if (codeNotesInput) codeNotesInput.value = sample.notes;
+      if (codeSnippetTextarea) {
+        codeSnippetTextarea.value = sample.code;
+        codeSnippetTextarea.dispatchEvent(new Event("input"));
+      }
+    });
+  });
+
+  // Handle Code Submission to Train Department Model
+  if (trainCodeForm) {
+    trainCodeForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const activeDeptCode = modalDeptSelect ? modalDeptSelect.value : (deptSelect ? deptSelect.value : "");
+      if (!activeDeptCode) {
+        alert("Please select a target department first.");
+        return;
+      }
+
+      const snippet = (codeSnippetTextarea ? codeSnippetTextarea.value : "").trim();
+      if (!snippet) {
+        alert("Please enter code into the editor to train the department model.");
+        return;
+      }
+
+      const title = (codeTitleInput ? codeTitleInput.value : "").trim() || "Code Invariant Checkpoint";
+      const language = codeLanguageSelect ? codeLanguageSelect.value : "python";
+      const notes = (codeNotesInput ? codeNotesInput.value : "").trim();
+
+      // UI state: activate live HUD
+      if (trainingSuccessCard) trainingSuccessCard.style.display = "none";
+      if (trainingLiveHud) trainingLiveHud.style.display = "flex";
+      if (submitTrainCodeBtn) {
+        submitTrainCodeBtn.disabled = true;
+        if (submitTrainBtnText) submitTrainBtnText.textContent = "Training Model...";
+      }
+
+      // Step 1: Tokenizing AST
+      if (trainingHudPhase) trainingHudPhase.textContent = "Step 1/3: Tokenizing Code AST & Syntax Trees...";
+      if (trainingHudBarFill) trainingHudBarFill.style.width = "30%";
+      if (trainingHudMeta) trainingHudMeta.textContent = `Analyzing ${snippet.length} chars in ${language.toUpperCase()}...`;
+
+      // Step 2 timer
+      setTimeout(() => {
+        if (trainingHudPhase) trainingHudPhase.textContent = "Step 2/3: Extracting Departmental Invariants & Rules...";
+        if (trainingHudBarFill) trainingHudBarFill.style.width = "65%";
+        if (trainingHudMeta) trainingHudMeta.textContent = "Detecting error boundaries, protocols, and constraints...";
+      }, 400);
+
+      try {
+        const response = await fetch(`/api/departments/${encodeURIComponent(activeDeptCode)}/train`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title,
+            code_snippet: snippet,
+            language,
+            notes,
+          }),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to train department model.");
+        }
+
+        const result = await response.json();
+
+        // Step 3: Neural calibration completed
+        if (trainingHudPhase) trainingHudPhase.textContent = "Step 3/3: Calibrating Neural Memory & Updating Epoch...";
+        if (trainingHudBarFill) trainingHudBarFill.style.width = "100%";
+
+        setTimeout(() => {
+          if (trainingLiveHud) trainingLiveHud.style.display = "none";
+          if (submitTrainCodeBtn) {
+            submitTrainCodeBtn.disabled = false;
+            if (submitTrainBtnText) submitTrainBtnText.textContent = "Train Model on Code";
+          }
+
+          // Clear inputs
+          if (codeSnippetTextarea) {
+            codeSnippetTextarea.value = "";
+            codeSnippetTextarea.dispatchEvent(new Event("input"));
+          }
+          if (codeTitleInput) codeTitleInput.value = "";
+          if (codeNotesInput) codeNotesInput.value = "";
+
+          // Show success banner
+          if (trainingSuccessCard) {
+            trainingSuccessCard.style.display = "flex";
+            if (trainingSuccessTitle) {
+              trainingSuccessTitle.textContent = `Department ${result.department.code} Model Trained (Epoch #${result.entry.epoch})!`;
+            }
+            if (trainingSuccessDesc) {
+              trainingSuccessDesc.textContent = `Extracted ${result.entry.extracted_rules.length} architectural invariants: ${result.entry.extracted_rules.slice(0, 2).join("; ")}...`;
+            }
+          }
+
+          // Update departments cache and view
+          const idx = departmentsCache.findIndex((d) => d.code === activeDeptCode);
+          if (idx !== -1) departmentsCache[idx] = result.department;
+
+          updateSelectedDepartmentUI(activeDeptCode);
+        }, 600);
+
+      } catch (err) {
+        if (trainingLiveHud) trainingLiveHud.style.display = "none";
+        if (submitTrainCodeBtn) {
+          submitTrainCodeBtn.disabled = false;
+          if (submitTrainBtnText) submitTrainBtnText.textContent = "Train Model on Code";
+        }
+        alert(`Training Error: ${err.message}`);
+      }
+    });
+  }
+
+  if (dismissTrainingSuccessBtn && trainingSuccessCard) {
+    dismissTrainingSuccessBtn.addEventListener("click", () => {
+      trainingSuccessCard.style.display = "none";
+    });
+  }
+
+  // Toggle report invariants drawer
+  if (toggleReportInvariantsBtn && reportDeptInvariantsDrawer) {
+    toggleReportInvariantsBtn.addEventListener("click", () => {
+      const isHidden = reportDeptInvariantsDrawer.style.display === "none";
+      reportDeptInvariantsDrawer.style.display = isHidden ? "block" : "none";
+      toggleReportInvariantsBtn.textContent = isHidden ? "Hide Invariants ▲" : "Trained Invariants ▼";
+    });
+  }
 });
 

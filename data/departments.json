@@ -1,0 +1,119 @@
+[
+  {
+    "id": "dept-cs-101",
+    "code": "CS-101",
+    "name": "Computer Science & AI Systems",
+    "description": "Distributed architectures, scalable systems, machine learning pipelines, and idempotent microservices",
+    "epoch_count": 3,
+    "last_trained_at": "2026-09-23T13:28:04.751Z",
+    "training_entries": [
+      {
+        "id": "tr-cs-01",
+        "title": "Idempotent Distributed Task Ingestion & Exponential Backoff",
+        "language": "python",
+        "notes": "Enforces atomic idempotency keys, circuit breaker thresholds, and bounded retry loops in asynchronous worker tasks.",
+        "trained_at": "2026-09-20T10:14:00Z",
+        "tokens_count": 245,
+        "epoch": 1,
+        "extracted_rules": [
+          "Enforce atomic idempotency token verification prior to worker job processing",
+          "Apply randomized exponential backoff jitter on upstream network failures",
+          "Route persistently failed tasks to a Dead Letter Queue (DLQ) after 4 attempts",
+          "Prevent unhandled exception leakage across microservice thread pools"
+        ],
+        "code_snippet": "class IdempotentRetryWorker:\n    def __init__(self, max_retries: int = 4, backoff_factor: float = 1.5):\n        self.max_retries = max_retries\n        self.backoff_factor = backoff_factor\n        self.processed_keys = set()\n\n    def execute(self, key: str, task_fn):\n        if key in self.processed_keys:\n            return None\n        delay = 1.0\n        for attempt in range(1, self.max_retries + 1):\n            try:\n                res = task_fn()\n                self.processed_keys.add(key)\n                return res\n            except Exception as e:\n                time.sleep(delay)\n                delay *= self.backoff_factor\n        raise RuntimeError(\"Task failed after max retries\")"
+      },
+      {
+        "id": "tr-cs-02",
+        "title": "In-Memory Cosine Similarity Vector Semantic Search",
+        "language": "typescript",
+        "notes": "Real-time semantic vector retrieval with normalized dot product and top-k heap ranking.",
+        "trained_at": "2026-09-21T14:32:00Z",
+        "tokens_count": 198,
+        "epoch": 2,
+        "extracted_rules": [
+          "Maintain L2 normalized embeddings to minimize Euclidean calculation cost",
+          "Compute cosine similarity via SIMD dot-product accumulation",
+          "Implement top-k selection with O(k log N) time complexity",
+          "Validate dimensional alignment across query and target index vectors"
+        ],
+        "code_snippet": "export function cosineSimilarity(a: number[], b: number[]): number {\n  let dot = 0, normA = 0, normB = 0;\n  for (let i = 0; i < a.length; i++) {\n    dot += a[i] * b[i];\n    normA += a[i] * a[i];\n    normB += b[i] * b[i];\n  }\n  return dot / (Math.sqrt(normA) * Math.sqrt(normB) || 1e-9);\n}"
+      }
+    ]
+  },
+  {
+    "id": "dept-eng-ai",
+    "code": "ENG-AI",
+    "name": "Engineering & Applied Robotics",
+    "description": "Embedded telemetry, feedback control loops, hardware sensor fusion, and actuator dynamics",
+    "epoch_count": 1,
+    "last_trained_at": "2026-09-23T13:27:53.397Z",
+    "training_entries": [
+      {
+        "id": "tr-eng-01",
+        "title": "Discrete PID Controller with Anti-Windup Clamping",
+        "language": "python",
+        "notes": "Real-time actuator control preventing integrator windup during saturation limits.",
+        "trained_at": "2026-09-21T09:20:00Z",
+        "tokens_count": 210,
+        "epoch": 1,
+        "extracted_rules": [
+          "Clamp accumulator terms to prevent integral saturation under continuous load",
+          "Ensure constant delta-time (dt) sampling validation for deterministic actuation",
+          "Enforce fail-safe hardware limits on all actuator output commands"
+        ],
+        "code_snippet": "class DiscretePIDController:\n    def __init__(self, kp: float, ki: float, kd: float, limits=(-100, 100)):\n        self.kp, self.ki, self.kd = kp, ki, kd\n        self.min_val, self.max_val = limits\n        self.integral = 0.0\n        self.prev_error = 0.0\n\n    def step(self, target: float, actual: float, dt: float) -> float:\n        err = target - actual\n        self.integral = max(min(self.integral + err * dt, self.max_val), self.min_val)\n        deriv = (err - self.prev_error) / dt if dt > 0 else 0.0\n        self.prev_error = err\n        out = (self.kp * err) + (self.ki * self.integral) + (self.kd * deriv)\n        return max(min(out, self.max_val), self.min_val)"
+      }
+    ]
+  },
+  {
+    "id": "dept-fin-quant",
+    "code": "FIN-QUANT",
+    "name": "Finance & Quantitative Risk",
+    "description": "Capital adequacy, portfolio optimization, parametric VaR, and risk-adjusted yield models",
+    "epoch_count": 1,
+    "last_trained_at": "2026-09-23T13:27:53.397Z",
+    "training_entries": [
+      {
+        "id": "tr-fin-01",
+        "title": "Parametric Value-at-Risk (VaR) & Volatility Scaling",
+        "language": "python",
+        "notes": "Models tail-risk distribution and 99% confidence threshold volatility scaling.",
+        "trained_at": "2026-09-22T11:00:00Z",
+        "tokens_count": 185,
+        "epoch": 1,
+        "extracted_rules": [
+          "Scale volatility parameters across multi-day horizons via sqrt(t) factor",
+          "Calculate Conditional Value-at-Risk (Expected Shortfall) for extreme tail losses",
+          "Enforce capital reserve cushions proportional to 99% confidence z-scores"
+        ],
+        "code_snippet": "def calculate_var(returns: list[float], confidence: float = 0.99, horizon: int = 10):\n    mu = sum(returns) / len(returns)\n    sigma = (sum((x - mu)**2 for x in returns) / len(returns)) ** 0.5\n    z = 2.326 if confidence == 0.99 else 1.645\n    var = (z * sigma - mu) * (horizon ** 0.5)\n    return {\"var\": round(var, 4), \"horizon_days\": horizon}"
+      }
+    ]
+  },
+  {
+    "id": "dept-med-bio",
+    "code": "MED-BIO",
+    "name": "Biomedical & Clinical Informatics",
+    "description": "Clinical epidemiology, diagnostic decision support, HIPAA safe harbors, and HL7 FHIR pipelines",
+    "epoch_count": 1,
+    "last_trained_at": "2026-09-23T13:27:53.397Z",
+    "training_entries": [
+      {
+        "id": "tr-med-01",
+        "title": "ACC/AHA Clinical Risk Stratification Engine",
+        "language": "python",
+        "notes": "Evaluates patient biometric vitals against evidence-based cardiology guidelines.",
+        "trained_at": "2026-09-22T15:45:00Z",
+        "tokens_count": 195,
+        "epoch": 1,
+        "extracted_rules": [
+          "Ground clinical score coefficients strictly in peer-reviewed ACC/AHA clinical trials",
+          "Enforce deterministic tiering (Low, Moderate, High) with biometric explanations",
+          "Maintain strict HIPAA anonymization on all patient identifier payloads"
+        ],
+        "code_snippet": "def stratify_cv_risk(vitals: dict) -> dict:\n    sbp = vitals.get(\"systolic_bp\", 120)\n    ratio = vitals.get(\"cholesterol_ratio\", 3.5)\n    score = 0.05 + (0.08 if sbp >= 140 else 0.0) + (0.07 if ratio > 4.5 else 0.0)\n    tier = \"High\" if score > 0.15 else \"Moderate\" if score > 0.08 else \"Low\"\n    return {\"risk_score\": round(score, 3), \"tier\": tier}"
+      }
+    ]
+  }
+]

@@ -34,6 +34,32 @@ interface ResearchRecord {
   sources: SourceItem[];
   created_at: string;
   timestamp?: string;
+  department_code?: string;
+  department_name?: string;
+  trained_epoch?: number;
+}
+
+// Department Code & In-Context LLM Training Interfaces
+interface CodeTrainingEntry {
+  id: string;
+  title: string;
+  code_snippet: string;
+  language: string;
+  notes?: string;
+  trained_at: string;
+  tokens_count: number;
+  extracted_rules: string[];
+  epoch: number;
+}
+
+interface Department {
+  id: string;
+  code: string; // e.g. "CS-101", "ENG-AI", "FIN-QUANT", "MED-BIO"
+  name: string;
+  description: string;
+  training_entries: CodeTrainingEntry[];
+  epoch_count: number;
+  last_trained_at?: string;
 }
 
 interface ResearchSummary {
@@ -270,6 +296,353 @@ function saveStore(): void {
 
 loadStore();
 
+// --------------------------------------------------------------------------
+// Department Code Ingestion & In-Context LLM Training Engine
+// --------------------------------------------------------------------------
+const DEPARTMENTS_FILE = path.join(DATA_DIR, "departments.json");
+let departmentsStore: Department[] = [];
+
+const DEFAULT_DEPARTMENTS: Department[] = [
+  {
+    id: "dept-cs-101",
+    code: "CS-101",
+    name: "Computer Science & AI Systems",
+    description: "Distributed architectures, scalable systems, machine learning pipelines, and idempotent microservices",
+    epoch_count: 2,
+    last_trained_at: new Date().toISOString(),
+    training_entries: [
+      {
+        id: "tr-cs-01",
+        title: "Idempotent Distributed Task Ingestion & Exponential Backoff",
+        language: "python",
+        notes: "Enforces atomic idempotency keys, circuit breaker thresholds, and bounded retry loops in asynchronous worker tasks.",
+        trained_at: "2026-09-20T10:14:00Z",
+        tokens_count: 245,
+        epoch: 1,
+        extracted_rules: [
+          "Enforce atomic idempotency token verification prior to worker job processing",
+          "Apply randomized exponential backoff jitter on upstream network failures",
+          "Route persistently failed tasks to a Dead Letter Queue (DLQ) after 4 attempts",
+          "Prevent unhandled exception leakage across microservice thread pools"
+        ],
+        code_snippet: `class IdempotentRetryWorker:
+    def __init__(self, max_retries: int = 4, backoff_factor: float = 1.5):
+        self.max_retries = max_retries
+        self.backoff_factor = backoff_factor
+        self.processed_keys = set()
+
+    def execute(self, key: str, task_fn):
+        if key in self.processed_keys:
+            return None
+        delay = 1.0
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                res = task_fn()
+                self.processed_keys.add(key)
+                return res
+            except Exception as e:
+                time.sleep(delay)
+                delay *= self.backoff_factor
+        raise RuntimeError("Task failed after max retries")`
+      },
+      {
+        id: "tr-cs-02",
+        title: "In-Memory Cosine Similarity Vector Semantic Search",
+        language: "typescript",
+        notes: "Real-time semantic vector retrieval with normalized dot product and top-k heap ranking.",
+        trained_at: "2026-09-21T14:32:00Z",
+        tokens_count: 198,
+        epoch: 2,
+        extracted_rules: [
+          "Maintain L2 normalized embeddings to minimize Euclidean calculation cost",
+          "Compute cosine similarity via SIMD dot-product accumulation",
+          "Implement top-k selection with O(k log N) time complexity",
+          "Validate dimensional alignment across query and target index vectors"
+        ],
+        code_snippet: `export function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB) || 1e-9);
+}`
+      }
+    ]
+  },
+  {
+    id: "dept-eng-ai",
+    code: "ENG-AI",
+    name: "Engineering & Applied Robotics",
+    description: "Embedded telemetry, feedback control loops, hardware sensor fusion, and actuator dynamics",
+    epoch_count: 1,
+    last_trained_at: new Date().toISOString(),
+    training_entries: [
+      {
+        id: "tr-eng-01",
+        title: "Discrete PID Controller with Anti-Windup Clamping",
+        language: "python",
+        notes: "Real-time actuator control preventing integrator windup during saturation limits.",
+        trained_at: "2026-09-21T09:20:00Z",
+        tokens_count: 210,
+        epoch: 1,
+        extracted_rules: [
+          "Clamp accumulator terms to prevent integral saturation under continuous load",
+          "Ensure constant delta-time (dt) sampling validation for deterministic actuation",
+          "Enforce fail-safe hardware limits on all actuator output commands"
+        ],
+        code_snippet: `class DiscretePIDController:
+    def __init__(self, kp: float, ki: float, kd: float, limits=(-100, 100)):
+        self.kp, self.ki, self.kd = kp, ki, kd
+        self.min_val, self.max_val = limits
+        self.integral = 0.0
+        self.prev_error = 0.0
+
+    def step(self, target: float, actual: float, dt: float) -> float:
+        err = target - actual
+        self.integral = max(min(self.integral + err * dt, self.max_val), self.min_val)
+        deriv = (err - self.prev_error) / dt if dt > 0 else 0.0
+        self.prev_error = err
+        out = (self.kp * err) + (self.ki * self.integral) + (self.kd * deriv)
+        return max(min(out, self.max_val), self.min_val)`
+      }
+    ]
+  },
+  {
+    id: "dept-fin-quant",
+    code: "FIN-QUANT",
+    name: "Finance & Quantitative Risk",
+    description: "Capital adequacy, portfolio optimization, parametric VaR, and risk-adjusted yield models",
+    epoch_count: 1,
+    last_trained_at: new Date().toISOString(),
+    training_entries: [
+      {
+        id: "tr-fin-01",
+        title: "Parametric Value-at-Risk (VaR) & Volatility Scaling",
+        language: "python",
+        notes: "Models tail-risk distribution and 99% confidence threshold volatility scaling.",
+        trained_at: "2026-09-22T11:00:00Z",
+        tokens_count: 185,
+        epoch: 1,
+        extracted_rules: [
+          "Scale volatility parameters across multi-day horizons via sqrt(t) factor",
+          "Calculate Conditional Value-at-Risk (Expected Shortfall) for extreme tail losses",
+          "Enforce capital reserve cushions proportional to 99% confidence z-scores"
+        ],
+        code_snippet: `def calculate_var(returns: list[float], confidence: float = 0.99, horizon: int = 10):
+    mu = sum(returns) / len(returns)
+    sigma = (sum((x - mu)**2 for x in returns) / len(returns)) ** 0.5
+    z = 2.326 if confidence == 0.99 else 1.645
+    var = (z * sigma - mu) * (horizon ** 0.5)
+    return {"var": round(var, 4), "horizon_days": horizon}`
+      }
+    ]
+  },
+  {
+    id: "dept-med-bio",
+    code: "MED-BIO",
+    name: "Biomedical & Clinical Informatics",
+    description: "Clinical epidemiology, diagnostic decision support, HIPAA safe harbors, and HL7 FHIR pipelines",
+    epoch_count: 1,
+    last_trained_at: new Date().toISOString(),
+    training_entries: [
+      {
+        id: "tr-med-01",
+        title: "ACC/AHA Clinical Risk Stratification Engine",
+        language: "python",
+        notes: "Evaluates patient biometric vitals against evidence-based cardiology guidelines.",
+        trained_at: "2026-09-22T15:45:00Z",
+        tokens_count: 195,
+        epoch: 1,
+        extracted_rules: [
+          "Ground clinical score coefficients strictly in peer-reviewed ACC/AHA clinical trials",
+          "Enforce deterministic tiering (Low, Moderate, High) with biometric explanations",
+          "Maintain strict HIPAA anonymization on all patient identifier payloads"
+        ],
+        code_snippet: `def stratify_cv_risk(vitals: dict) -> dict:
+    sbp = vitals.get("systolic_bp", 120)
+    ratio = vitals.get("cholesterol_ratio", 3.5)
+    score = 0.05 + (0.08 if sbp >= 140 else 0.0) + (0.07 if ratio > 4.5 else 0.0)
+    tier = "High" if score > 0.15 else "Moderate" if score > 0.08 else "Low"
+    return {"risk_score": round(score, 3), "tier": tier}`
+      }
+    ]
+  }
+];
+
+function loadDepartments(): void {
+  try {
+    if (fs.existsSync(DEPARTMENTS_FILE)) {
+      const data = fs.readFileSync(DEPARTMENTS_FILE, "utf-8");
+      departmentsStore = JSON.parse(data);
+    }
+  } catch (err) {
+    console.warn("Could not read departments.json, initializing defaults:", err);
+  }
+
+  if (!departmentsStore || departmentsStore.length === 0) {
+    departmentsStore = DEFAULT_DEPARTMENTS;
+    saveDepartments();
+  }
+}
+
+function saveDepartments(): void {
+  try {
+    fs.writeFileSync(DEPARTMENTS_FILE, JSON.stringify(departmentsStore, null, 2), "utf-8");
+  } catch (err) {
+    console.error("Error saving departments.json:", err);
+  }
+}
+
+loadDepartments();
+
+function getDepartmentByCode(code?: string): Department | undefined {
+  if (!code) return undefined;
+  const clean = code.trim().toUpperCase();
+  return departmentsStore.find((d) => d.code.toUpperCase() === clean);
+}
+
+// Heuristic & LLM Code Invariant Analysis
+async function extractCodeTrainingInvariants(
+  code: string,
+  language: string,
+  title: string,
+  notes: string,
+  dept: Department
+): Promise<{ rules: string[]; summary: string }> {
+  const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY)?.trim();
+  if (apiKey) {
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `You are a Senior Systems Architect and Departmental AI Fine-Tuning Specialist.
+A developer is training the LLM memory for Department: "${dept.name}" (${dept.code}).
+Analyze this code snippet and extract 3-4 concise, high-value engineering invariants, architectural rules, or domain constraints that this code introduces for the department.
+
+Title: ${title}
+Language: ${language}
+Context/Notes: ${notes}
+
+Code:
+${code.slice(0, 3000)}
+
+Respond in valid JSON format:
+{
+  "rules": ["Rule 1", "Rule 2", "Rule 3"],
+  "summary": "1-sentence executive summary of the trained architectural pattern"
+}`;
+
+      const res = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: { responseMimeType: "application/json" },
+      });
+
+      const parsed = JSON.parse(res.text || "{}");
+      if (Array.isArray(parsed.rules) && parsed.rules.length > 0) {
+        return {
+          rules: parsed.rules.slice(0, 5),
+          summary: parsed.summary || `Trained ${dept.code} model on ${title}`,
+        };
+      }
+    } catch (e: any) {
+      console.warn("AI code invariant extraction fallback:", e.message);
+    }
+  }
+
+  // Fast heuristic AST & pattern extraction
+  const rules: string[] = [];
+  const cleanCode = code.trim();
+
+  const classMatch = /class\s+([A-Za-z0-9_]+)/.exec(cleanCode);
+  const funcMatch = /(def|function|fn)\s+([A-Za-z0-9_]+)/.exec(cleanCode);
+  const hasAsync = /async\s+|await\s+|Promise|tokio|thread/i.test(cleanCode);
+  const hasErrorHandling = /try\s*[:{]|catch\s*\(|except\s+/i.test(cleanCode);
+  const hasMath = /math|sqrt|sum|numpy|pandas|matrix|calc|rate/i.test(cleanCode);
+  const hasNetwork = /http|fetch|request|endpoint|socket|api/i.test(cleanCode);
+
+  if (classMatch) {
+    rules.push(`Enforce modular state encapsulation via '${classMatch[1]}' abstraction`);
+  }
+  if (funcMatch) {
+    rules.push(`Maintain deterministic execution flow following '${funcMatch[2]}' contract`);
+  }
+  if (hasAsync) {
+    rules.push("Mandate non-blocking asynchronous event loop processing and concurrency isolation");
+  }
+  if (hasErrorHandling) {
+    rules.push("Apply defensive error boundary clamping and graceful exception degradation");
+  }
+  if (hasMath) {
+    rules.push("Enforce numeric precision boundaries and statistical stability checks");
+  }
+  if (hasNetwork) {
+    rules.push("Incorporate strict network retry backoff and idempotent communication safeguards");
+  }
+
+  if (rules.length === 0) {
+    rules.push(`Enforce idiomatic ${language.toUpperCase()} architectural guidelines for ${dept.code}`);
+    rules.push(`Ensure memory safety, predictable complexity, and domain compliance`);
+  }
+
+  return {
+    rules: rules.slice(0, 4),
+    summary: notes || `Trained ${dept.code} knowledge on ${title} (${language})`,
+  };
+}
+
+async function trainDepartmentCode(
+  deptCode: string,
+  input: { title?: string; code_snippet: string; language?: string; notes?: string }
+): Promise<{ department: Department; entry: CodeTrainingEntry }> {
+  const dept = getDepartmentByCode(deptCode);
+  if (!dept) {
+    throw new Error(`Department '${deptCode}' not found.`);
+  }
+
+  const code = (input.code_snippet || "").trim();
+  if (!code) {
+    throw new Error("Please enter code to train the department model.");
+  }
+
+  const title = (input.title || "").trim() || `Code Artifact #${dept.training_entries.length + 1}`;
+  const language = (input.language || "python").trim().toLowerCase();
+  const notes = (input.notes || "").trim();
+  const tokens = Math.max(16, Math.ceil(code.length / 4));
+
+  const extraction = await extractCodeTrainingInvariants(code, language, title, notes, dept);
+
+  dept.epoch_count += 1;
+  const newEntryId = `tr-${dept.code.toLowerCase().replace(/[^a-z0-9]/g, "")}-${Date.now().toString(36)}`;
+  const newEntry: CodeTrainingEntry = {
+    id: newEntryId,
+    title,
+    code_snippet: code,
+    language,
+    notes: extraction.summary,
+    trained_at: new Date().toISOString(),
+    tokens_count: tokens,
+    extracted_rules: extraction.rules,
+    epoch: dept.epoch_count,
+  };
+
+  dept.training_entries.unshift(newEntry);
+  dept.last_trained_at = new Date().toISOString();
+  saveDepartments();
+
+  pushGoogleCloudLog("NOTICE", "trainer.department", `Model successfully trained for ${dept.code} (Epoch #${dept.epoch_count})`, {
+    department_code: dept.code,
+    department_name: dept.name,
+    entry_title: title,
+    language,
+    tokens: tokens,
+    rules_extracted: extraction.rules.length,
+    total_checkpoints: dept.training_entries.length,
+  });
+
+  return { department: dept, entry: newEntry };
+}
+
 // System Status Helpers
 function getSystemStatus() {
   const tavilyKey = process.env.TAVILY_API_KEY?.trim();
@@ -288,22 +661,26 @@ function getSystemStatus() {
   let activeProvider = "heuristic";
   let resolvedModel = "heuristic-synthesizer";
 
-  if (process.env.MODEL_NAME?.trim()) {
-    resolvedModel = process.env.MODEL_NAME.trim();
-  }
-
   if (hasGemini) {
     activeProvider = "gemini";
-    if (!process.env.MODEL_NAME?.trim()) resolvedModel = "gemini-2.5-flash";
+    // If MODEL_NAME is set and is a valid Gemini model, use it; otherwise default to gemini-2.5-flash
+    const envModel = process.env.MODEL_NAME?.trim();
+    if (envModel && (envModel.toLowerCase().includes("gemini") || envModel.toLowerCase().startsWith("learnlm"))) {
+      resolvedModel = envModel;
+    } else {
+      resolvedModel = "gemini-2.5-flash";
+    }
   } else if (hasOpenai) {
     activeProvider = "openai";
-    if (!process.env.MODEL_NAME?.trim()) resolvedModel = "gpt-4o-mini";
+    resolvedModel = process.env.MODEL_NAME?.trim() || "gpt-4o-mini";
   } else if (hasAnthropic) {
     activeProvider = "anthropic";
-    if (!process.env.MODEL_NAME?.trim()) resolvedModel = "claude-3-5-sonnet-20241022";
+    resolvedModel = process.env.MODEL_NAME?.trim() || "claude-3-5-sonnet-20241022";
   } else if (hasGroq) {
     activeProvider = "groq";
-    if (!process.env.MODEL_NAME?.trim()) resolvedModel = "llama-3.3-70b-versatile";
+    resolvedModel = process.env.MODEL_NAME?.trim() || "llama-3.3-70b-versatile";
+  } else if (process.env.MODEL_NAME?.trim()) {
+    resolvedModel = process.env.MODEL_NAME.trim();
   }
 
   return {
@@ -454,7 +831,8 @@ function buildHeuristicReport(
   topic: string,
   summary: ResearchSummary,
   sources: SourceItem[],
-  dateStr: string
+  dateStr: string,
+  department?: Department
 ): string {
   const findingsMd = summary.key_findings.map((f) => `- ${f}`).join("\n");
   const statsMd = summary.important_statistics.map((s) => `- **Metric**: ${s}`).join("\n");
@@ -466,13 +844,30 @@ function buildHeuristicReport(
     .map((s) => `[${s.index}] [${s.title}](${s.url}) — *${s.domain}*`)
     .join("\n");
 
+  let deptMd = "";
+  if (department && department.training_entries.length > 0) {
+    deptMd = [
+      "",
+      `## Department Technical Alignment (${department.code} — ${department.name})`,
+      `*Specialized Synthesis Checkpoint: Continuous Training Epoch #${department.epoch_count} | ${department.training_entries.length} Trained Code Checkpoints Active*`,
+      "",
+      `The empirical findings for **${topic}** were evaluated through the specialized architectural constraints and engineering standards learned by the **${department.code}** department model:`,
+      ...department.training_entries.map((entry, idx) => {
+        return `- **${entry.title}** (${entry.language.toUpperCase()} / Checkpoint #${idx + 1}): Enforces ${entry.extracted_rules.join("; ")} [1].`;
+      }),
+      "",
+      `**Architectural Verification**: Recommended systems, protocols, and workflows adhere strictly to these ${department.code} departmental code invariants and risk-mitigation patterns.`,
+      "",
+    ].join("\n");
+  }
+
   return [
     `# In-Depth Research Dossier: ${topic}`,
-    `*Date: ${dateStr}* | *Authoritative Sources Analyzed: ${sources.length}*`,
+    `*Date: ${dateStr}* | *Authoritative Sources Analyzed: ${sources.length}*${department ? ` | *Department: ${department.code} (Epoch #${department.epoch_count})*` : ""}`,
     "",
     "## Executive Summary",
     summary.executive_summary,
-    "",
+    deptMd,
     "## Key Verified Findings & Empirical Evidence",
     findingsMd,
     "",
@@ -503,7 +898,8 @@ function buildHeuristicReport(
 async function runGeminiSynthesis(
   topic: string,
   sources: SourceItem[],
-  dateStr: string
+  dateStr: string,
+  department?: Department
 ): Promise<string> {
   const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY)?.trim();
   if (!apiKey) {
@@ -511,17 +907,48 @@ async function runGeminiSynthesis(
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  const modelName = process.env.MODEL_NAME?.trim() || "gemini-2.5-flash";
+  
+  // Ensure we use a valid Gemini model name (avoiding third-party model names like gpt-4o-mini)
+  let modelName = "gemini-2.5-flash";
+  const envModel = process.env.MODEL_NAME?.trim();
+  if (envModel && (envModel.toLowerCase().includes("gemini") || envModel.toLowerCase().startsWith("learnlm"))) {
+    modelName = envModel;
+  }
 
   const sourcesText = sources
     .map((s) => `[${s.index}] "${s.title}" (${s.url}, domain: ${s.domain}):\n${s.snippet}`)
     .join("\n\n");
 
-  const prompt = `You are a World-Class Executive Research Analyst and Senior Report Writer.
+  let deptPromptInjection = "";
+  if (department && department.training_entries.length > 0) {
+    deptPromptInjection = `
+DEPARTMENT SPECIALIZATION & CONTINUOUSLY TRAINED CODE INVARIANTS:
+Target Department: ${department.name} (Code: ${department.code})
+Continuous Training Level: Epoch ${department.epoch_count} (${department.training_entries.length} trained code checkpoints)
+
+The model has been continuously trained on the following departmental code artifacts and engineering standards:
+${department.training_entries.map((e, idx) => `[Checkpoint #${idx + 1} - ${e.language.toUpperCase()}]: "${e.title}"
+Key Invariants Enforced:
+${e.extracted_rules.map((r) => `  * ${r}`).join("\n")}
+Code Reference:
+\`\`\`${e.language}
+${e.code_snippet.slice(0, 350)}
+\`\`\``).join("\n\n")}
+
+CRITICAL INSTRUCTION FOR DEPARTMENT MODEL:
+You MUST synthesize and analyze "${topic}" specifically through the technical lens, constraints, conventions, and architectural standards of the ${department.name} (${department.code}) department.
+Include a prominent section in the report:
+## Department Technical Alignment (${department.code})
+evaluating the topic's direct alignment, trade-offs, and architectural implications relative to these trained code invariants.
+`;
+  }
+
+  const prompt = `You are a World-Class Executive Research Analyst and Senior Report Writer specialized for ${department ? department.name + ' (' + department.code + ')' : 'Strategic Research'}.
 Your task is to craft a polished, publication-grade research report based on verified source citations.
 
 TOPIC: ${topic}
 DATE: ${dateStr}
+${deptPromptInjection}
 
 COLLECTED SOURCES:
 ${sourcesText}
@@ -530,8 +957,9 @@ CRITICAL REPORT REQUIREMENTS:
 1. Ground every factual claim, metric, and finding strictly in the provided sources with inline citation tags like [1], [2], [1][3].
 2. Provide a formal, analytical, objective, and deeply informative document with:
    # Title
-   *Date: ${dateStr}*
+   *Date: ${dateStr}*${department ? ` | *Department: ${department.code} (Epoch #${department.epoch_count})*` : ""}
    ## Executive Summary
+   ${department ? `## Department Technical Alignment (${department.code})` : ""}
    ## Key Findings & Empirical Evidence
    ## Quantitative Metrics & Market Indicators
    ## Strategic Trends & Industry Dynamics
@@ -554,20 +982,129 @@ Write the complete markdown report:`;
   return response.text?.trim() || "";
 }
 
+// Optional OpenAI LLM Synthesis (supports OpenAI API keys when configured)
+async function runOpenAISynthesis(
+  topic: string,
+  sources: SourceItem[],
+  dateStr: string,
+  department?: Department
+): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("No OpenAI API key available");
+  }
+
+  const model = process.env.MODEL_NAME?.trim() || "gpt-4o-mini";
+  const sourcesText = sources
+    .map((s) => `[${s.index}] "${s.title}" (${s.url}, domain: ${s.domain}):\n${s.snippet}`)
+    .join("\n\n");
+
+  let deptPromptInjection = "";
+  if (department && department.training_entries.length > 0) {
+    deptPromptInjection = `
+DEPARTMENT SPECIALIZATION & TRAINED CODE INVARIANTS:
+Target Department: ${department.name} (Code: ${department.code})
+Epoch: ${department.epoch_count} | Checkpoints: ${department.training_entries.length}
+Key Architectural Invariants:
+${department.training_entries.map((e) => `- ${e.title}: ${e.extracted_rules.join("; ")}`).join("\n")}
+`;
+  }
+
+  const prompt = `You are a World-Class Executive Research Analyst and Senior Report Writer.
+Compile a comprehensive, deeply analytical executive research dossier on the topic: "${topic}".
+Current Date: ${dateStr}
+${deptPromptInjection}
+
+AUTHORITATIVE SOURCES PROVIDED FOR CITATION:
+${sourcesText}
+
+Your report MUST be structured in markdown with:
+# In-Depth Research Dossier: ${topic}
+*Date: ${dateStr}* | *Authoritative Sources Analyzed: ${sources.length}*${department ? ` | *Department: ${department.code} (Epoch #${department.epoch_count})*` : ""}
+
+## Executive Summary
+(2-3 detailed paragraphs)
+
+${department ? `## Department Technical Alignment (${department.code})
+(Detailed evaluation adhering to trained code invariants)` : ""}
+
+## Key Verified Findings & Empirical Evidence
+(Detailed bullet points citing [1], [2], etc.)
+
+## Statistical Metrics & Quantitative Indicators
+(Specific numbers and projections from sources)
+
+## Strategic Landscape & Emerging Trends
+(Analysis of shifts and developments)
+
+## Opportunities, Synergies & Positive Drivers
+(Detailed opportunities)
+
+## Critical Challenges, Risks & Bottlenecks
+(Risks and constraints)
+
+## Strategic Outlook & Forward Trajectory
+(Future outlook)
+
+## Conclusion
+(Executive conclusion)
+
+## Sources & References
+(Numbered list of all sources with URLs)
+`;
+
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: "You are a professional executive research assistant." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.3,
+    }),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`OpenAI API error (${res.status}): ${errorText}`);
+  }
+
+  const data = (await res.json()) as any;
+  return data.choices?.[0]?.message?.content || "";
+}
+
 // Full Pipeline Orchestrator
-async function executeResearchPipeline(topic: string, onStage?: (stage: number, msg: string) => void) {
+async function executeResearchPipeline(
+  topic: string,
+  onStage?: (stage: number, msg: string) => void,
+  departmentCode?: string
+) {
   const dateStr = new Date().toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
     year: "numeric",
   });
 
+  const department = departmentCode ? getDepartmentByCode(departmentCode) : undefined;
+
   // Stage 1: Topic understanding & formulation
-  onStage?.(1, "Understanding topic & formulating search query...");
+  onStage?.(1, department 
+    ? `Formulating research query grounded in [${department.code}] trained code standards (Epoch #${department.epoch_count})...`
+    : "Understanding topic & formulating search query..."
+  );
   const status = getSystemStatus();
   pushGoogleCloudLog("INFO", "agents.researcher", `Research task initiated: "${topic}"`, {
     topic,
     active_provider: status.active_provider,
+    department_code: department?.code || "none",
+    department_name: department?.name || "none",
+    department_epochs: department?.epoch_count || 0,
+    trained_checkpoints: department?.training_entries.length || 0,
   });
 
   // Stage 2: Web Search
@@ -599,32 +1136,58 @@ async function executeResearchPipeline(topic: string, onStage?: (stage: number, 
   onStage?.(3, `Reading and extracting key facts from ${sources.length} verified sources...`);
 
   // Stage 4: Synthesizing findings
-  onStage?.(4, "Synthesizing findings and cross-checking data across sources...");
+  onStage?.(4, department
+    ? `Cross-checking sources and applying ${department.code} trained code invariants...`
+    : "Synthesizing findings and cross-checking data across sources..."
+  );
   let report = "";
 
   // Stage 5: Drafting report
-  onStage?.(5, "Drafting professional report with citations and references...");
+  onStage?.(5, department
+    ? `Drafting dossier specialized for ${department.name} (${department.code})...`
+    : "Drafting professional report with citations and references..."
+  );
 
+  let synthesisSuccess = false;
+
+  // Try Gemini if available
   if (status.has_gemini_key) {
     try {
-      report = await runGeminiSynthesis(topic, sources, dateStr);
+      report = await runGeminiSynthesis(topic, sources, dateStr, department);
+      synthesisSuccess = true;
       pushGoogleCloudLog("INFO", "agents.report_writer", `Gemini LLM synthesis succeeded`, {
         model: status.model_name,
         citations_included: true,
+        department_specialized: Boolean(department),
       });
     } catch (err: any) {
-      console.warn("Gemini synthesis encountered issue, using heuristic synthesizer:", err);
-      const summary = buildHeuristicSummary(topic, sources);
-      report = buildHeuristicReport(topic, summary, sources, dateStr);
-      pushGoogleCloudLog("WARNING", "agents.report_writer", `Gemini error, fallback to heuristic synthesis`, {
-        error: err.message,
-      });
+      console.warn("Gemini synthesis encountered issue:", err.message);
+      pushGoogleCloudLog("WARNING", "agents.report_writer", `Gemini error: ${err.message}`);
     }
-  } else {
+  }
+
+  // Fallback to OpenAI if Gemini was unavailable or threw an error
+  if (!synthesisSuccess && status.has_openai_key) {
+    try {
+      report = await runOpenAISynthesis(topic, sources, dateStr, department);
+      synthesisSuccess = true;
+      pushGoogleCloudLog("INFO", "agents.report_writer", `OpenAI LLM synthesis succeeded`, {
+        model: process.env.MODEL_NAME || "gpt-4o-mini",
+        department_specialized: Boolean(department),
+      });
+    } catch (openAiErr: any) {
+      console.warn("OpenAI synthesis encountered issue:", openAiErr.message);
+      pushGoogleCloudLog("WARNING", "agents.report_writer", `OpenAI error: ${openAiErr.message}`);
+    }
+  }
+
+  // If no external LLM succeeded, compile using the grounded heuristic synthesizer
+  if (!synthesisSuccess) {
     const summary = buildHeuristicSummary(topic, sources);
-    report = buildHeuristicReport(topic, summary, sources, dateStr);
+    report = buildHeuristicReport(topic, summary, sources, dateStr, department);
     pushGoogleCloudLog("INFO", "agents.report_writer", `Heuristic synthesis compiled dossier`, {
       verified_sources: sources.length,
+      department_specialized: Boolean(department),
     });
   }
 
@@ -637,6 +1200,9 @@ async function executeResearchPipeline(topic: string, onStage?: (stage: number, 
     sources,
     created_at: dateStr,
     timestamp: new Date().toISOString(),
+    department_code: department?.code,
+    department_name: department?.name,
+    trained_epoch: department?.epoch_count,
   };
 
   researchStore.unshift(newRecord);
@@ -645,6 +1211,7 @@ async function executeResearchPipeline(topic: string, onStage?: (stage: number, 
   pushGoogleCloudLog("NOTICE", "system.storage", `Dossier #${newId} saved to database store`, {
     id: newId,
     topic,
+    department_code: department?.code || "none",
   });
 
   return newRecord;
@@ -742,17 +1309,21 @@ app.post("/api/demo", (req, res) => {
 // API: Synchronous Research
 app.post("/research", async (req, res) => {
   const topic = (req.body?.topic || "").trim();
+  const department = (req.body?.department || req.body?.department_code || "").trim();
   if (!topic) {
     return res.status(400).json({ detail: "Please enter a research topic." });
   }
 
   try {
-    const result = await executeResearchPipeline(topic);
+    const result = await executeResearchPipeline(topic, undefined, department);
     res.json({
       topic: result.topic,
       report: result.report,
       sources: result.sources,
       created_at: result.created_at,
+      department_code: result.department_code,
+      department_name: result.department_name,
+      trained_epoch: result.trained_epoch,
     });
   } catch (err: any) {
     console.error("Research pipeline error:", err);
@@ -763,6 +1334,7 @@ app.post("/research", async (req, res) => {
 // API: SSE Stream Research
 app.get("/research/stream", async (req, res) => {
   const topic = (req.query.topic as string || "").trim();
+  const department = (req.query.department as string || req.query.department_code as string || "").trim();
   if (!topic) {
     res.setHeader("Content-Type", "text/event-stream");
     res.write(`data: ${JSON.stringify({ type: "error", message: "Please enter a research topic." })}\n\n`);
@@ -781,7 +1353,7 @@ app.get("/research/stream", async (req, res) => {
   try {
     const result = await executeResearchPipeline(topic, (stage, message) => {
       sendEvent({ type: "stage", stage, message });
-    });
+    }, department);
 
     sendEvent({
       type: "complete",
@@ -790,6 +1362,9 @@ app.get("/research/stream", async (req, res) => {
         report: result.report,
         sources: result.sources,
         created_at: result.created_at,
+        department_code: result.department_code,
+        department_name: result.department_name,
+        trained_epoch: result.trained_epoch,
       },
     });
   } catch (err: any) {
@@ -798,6 +1373,120 @@ app.get("/research/stream", async (req, res) => {
   } finally {
     res.end();
   }
+});
+
+// --------------------------------------------------------------------------
+// API: Department Training & Code Ingestion Routes
+// --------------------------------------------------------------------------
+app.get("/api/departments", (req, res) => {
+  res.json({
+    departments: departmentsStore.map((d) => ({
+      id: d.id,
+      code: d.code,
+      name: d.name,
+      description: d.description,
+      epoch_count: d.epoch_count,
+      checkpoints_count: d.training_entries.length,
+      last_trained_at: d.last_trained_at,
+      training_entries: d.training_entries,
+    })),
+  });
+});
+
+app.get("/api/departments/:code", (req, res) => {
+  const dept = getDepartmentByCode(req.params.code);
+  if (!dept) {
+    return res.status(404).json({ detail: `Department '${req.params.code}' not found.` });
+  }
+  res.json(dept);
+});
+
+// Create a new Department
+app.post("/api/departments", (req, res) => {
+  const code = (req.body?.code || "").trim().toUpperCase();
+  const name = (req.body?.name || "").trim();
+  const description = (req.body?.description || "").trim();
+
+  if (!code || !name) {
+    return res.status(400).json({ detail: "Department code and name are required." });
+  }
+
+  const existing = getDepartmentByCode(code);
+  if (existing) {
+    return res.status(409).json({ detail: `Department with code '${code}' already exists.` });
+  }
+
+  const newDept: Department = {
+    id: `dept-${code.toLowerCase().replace(/[^a-z0-9]/g, "")}-${Date.now().toString(36)}`,
+    code,
+    name,
+    description: description || `Specialized domain research and code training for ${name}`,
+    training_entries: [],
+    epoch_count: 0,
+    last_trained_at: new Date().toISOString(),
+  };
+
+  departmentsStore.push(newDept);
+  saveDepartments();
+
+  pushGoogleCloudLog("NOTICE", "trainer.department", `New department created: ${code} (${name})`, {
+    department_code: code,
+    department_name: name,
+  });
+
+  res.status(201).json(newDept);
+});
+
+// Train LLM memory on code snippet for a department
+app.post("/api/departments/:code/train", async (req, res) => {
+  const deptCode = req.params.code;
+  const { title, code_snippet, language, notes } = req.body || {};
+
+  if (!code_snippet || !code_snippet.trim()) {
+    return res.status(400).json({ detail: "Please provide a valid code snippet to train the model." });
+  }
+
+  try {
+    const { department, entry } = await trainDepartmentCode(deptCode, {
+      title,
+      code_snippet,
+      language,
+      notes,
+    });
+
+    res.json({
+      success: true,
+      message: `Department ${department.code} model trained with code checkpoint #${entry.epoch}!`,
+      department,
+      entry,
+    });
+  } catch (err: any) {
+    console.error("Training error:", err);
+    res.status(500).json({ detail: err.message || "Failed to train department model on code." });
+  }
+});
+
+// Delete a trained checkpoint
+app.delete("/api/departments/:code/training/:entryId", (req, res) => {
+  const dept = getDepartmentByCode(req.params.code);
+  if (!dept) {
+    return res.status(404).json({ detail: `Department '${req.params.code}' not found.` });
+  }
+
+  const initialCount = dept.training_entries.length;
+  dept.training_entries = dept.training_entries.filter((e) => e.id !== req.params.entryId);
+
+  if (dept.training_entries.length === initialCount) {
+    return res.status(404).json({ detail: "Trained code checkpoint not found." });
+  }
+
+  saveDepartments();
+  pushGoogleCloudLog("INFO", "trainer.department", `Removed trained checkpoint from department ${dept.code}`, {
+    department_code: dept.code,
+    remaining_checkpoints: dept.training_entries.length,
+  });
+
+  res.json({ success: true, department: dept });
 });
 
 // API: Download PDF

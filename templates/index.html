@@ -124,6 +124,13 @@
           <span class="header-action-label" id="googleAuthBtnLabel">Sign in</span>
         </button>
 
+        <!-- Department Code Training Studio Button -->
+        <button id="deptTrainingBtn" class="btn-header-action btn-dept-training" type="button" title="Open Department Model Training Studio">
+          <span class="header-action-icon">🎓</span>
+          <span class="header-action-label">Dept Training</span>
+          <span class="dept-epoch-badge" id="headerDeptEpochBadge">CS-101 (2)</span>
+        </button>
+
         <!-- Database Connected Pill -->
         <div class="status-pill db-ready" id="dbStatusPill" title="Connected to local SQLite database (data/research.db)">
           <span class="status-dot"></span>
@@ -180,6 +187,29 @@
 
         <!-- Search Input Box -->
         <div class="search-card">
+          <!-- Department Selector Bar -->
+          <div class="dept-selector-bar" id="deptSelectorBar">
+            <div class="dept-selector-main">
+              <span class="dept-selector-icon">🏢</span>
+              <div class="dept-select-wrap">
+                <label for="deptSelect" class="dept-select-label">Trained Department Model:</label>
+                <select id="deptSelect" class="dept-select">
+                  <!-- Dynamically populated from /api/departments -->
+                </select>
+              </div>
+            </div>
+            <div class="dept-training-meta">
+              <div class="dept-indicator-pill" id="deptTrainingStatusPill" title="Continuous training status">
+                <span class="dept-indicator-dot"></span>
+                <span id="deptTrainingStatusText">Trained on 2 code checkpoints</span>
+              </div>
+              <button type="button" class="btn-train-code-action" id="openTrainingStudioInlineBtn" title="Enter code to train this department model">
+                <span class="btn-sparkle">⚡</span>
+                <span>Train on Code</span>
+              </button>
+            </div>
+          </div>
+
           <form id="researchForm" class="search-form" onsubmit="return false;">
             <div class="input-wrapper">
               <span class="search-icon">🔍</span>
@@ -485,6 +515,26 @@
                 </div>
               </div>
             </div>
+            <!-- Department Model Checkpoint Banner -->
+            <div class="report-dept-banner" id="reportDeptBanner" style="display: none;">
+              <div class="report-dept-badge-icon">🎓</div>
+              <div class="report-dept-info">
+                <span class="report-dept-title" id="reportDeptTitle">Specialized Department Model: CS-101</span>
+                <span class="report-dept-sub" id="reportDeptSub">Synthesized with continuous code training memory (Epoch #2)</span>
+              </div>
+              <button type="button" class="btn-dept-view-invariants" id="toggleReportInvariantsBtn">
+                Trained Invariants ▼
+              </button>
+            </div>
+            <div class="report-dept-invariants-drawer" id="reportDeptInvariantsDrawer" style="display: none;">
+              <div class="invariants-header">
+                <span>ACTIVE DEPARTMENT CODE RULES &amp; ARCHITECTURAL STANDARDS</span>
+              </div>
+              <ul class="invariants-list" id="reportInvariantsList">
+                <!-- Populated dynamically -->
+              </ul>
+            </div>
+
             <div class="card-inner" id="reportMarkdownContainer">
               <!-- Rendered Markdown goes here -->
             </div>
@@ -645,6 +695,206 @@
       <p class="google-auth-disclaimer">
         To continue, Google will share your name, email address, and profile picture with ResearchAI.
       </p>
+    </div>
+  </div>
+
+  <!-- Department Code Training Studio Modal -->
+  <div class="gcp-modal-overlay" id="deptTrainingModal" style="display: none;">
+    <div class="gcp-modal-card dept-training-modal-card" role="dialog" aria-modal="true" aria-labelledby="deptTrainingHeading">
+      
+      <!-- Studio Header -->
+      <div class="gcp-modal-header">
+        <div class="gcp-modal-header-left">
+          <div class="dept-modal-icon-badge">🎓</div>
+          <div>
+            <div class="gcp-header-title-row">
+              <h2 id="deptTrainingHeading" class="gcp-modal-title">Department Model Training Studio</h2>
+              <span class="gcp-cloud-project-badge">In-Context Neural Training</span>
+            </div>
+            <p class="gcp-modal-sub">
+              Enter specialized code, algorithms, and architectural invariants. Each time you enter code, the system fine-tunes the LLM memory for that department.
+            </p>
+          </div>
+        </div>
+        <div class="gcp-modal-header-right">
+          <button type="button" class="btn-gcp-icon" id="closeDeptTrainingModalBtn" aria-label="Close">✕</button>
+        </div>
+      </div>
+
+      <!-- Studio Body: Two Columns (Left: Code Trainer Input; Right: Trained Code Memory Checkpoints) -->
+      <div class="dept-training-grid">
+        
+        <!-- Left Column: Code Input & Training Actions -->
+        <div class="dept-training-input-panel">
+          <div class="panel-section-title">
+            <span>⚡ Enter Code to Train Model</span>
+            <span class="panel-badge">Continuous Learning Engine</span>
+          </div>
+
+          <!-- Department Selector / Creator in Modal -->
+          <div class="modal-dept-select-row">
+            <div class="form-field flex-1">
+              <label for="modalDeptSelect" class="form-label">Target Department:</label>
+              <select id="modalDeptSelect" class="form-select">
+                <!-- Populated dynamically -->
+              </select>
+            </div>
+            <button type="button" class="btn-secondary-action" id="toggleNewDeptFormBtn">
+              + New Department
+            </button>
+          </div>
+
+          <!-- New Department Inline Form (Hidden by default) -->
+          <div class="new-dept-box" id="newDeptBox" style="display: none;">
+            <div class="new-dept-title">Create New Department Code</div>
+            <div class="new-dept-fields">
+              <input type="text" id="newDeptCodeInput" class="form-input" placeholder="Code (e.g. CYBER-01, DATA-301)" maxlength="16" />
+              <input type="text" id="newDeptNameInput" class="form-input" placeholder="Department Name (e.g. Cybersecurity & Cryptography)" maxlength="60" />
+            </div>
+            <input type="text" id="newDeptDescInput" class="form-input" placeholder="Domain Scope / Description (optional)" maxlength="150" />
+            <div class="new-dept-actions">
+              <button type="button" class="btn-primary-action small" id="confirmCreateDeptBtn">Save Department</button>
+              <button type="button" class="btn-secondary-action small" id="cancelCreateDeptBtn">Cancel</button>
+            </div>
+          </div>
+
+          <!-- Code Entry Form -->
+          <form id="trainCodeForm" onsubmit="return false;">
+            <div class="form-row">
+              <div class="form-field flex-2">
+                <label for="codeTitleInput" class="form-label">Code Artifact / Module Title:</label>
+                <input type="text" id="codeTitleInput" class="form-input" placeholder="e.g. Distributed Circuit Breaker &amp; Retry Orchestrator" required maxlength="120" />
+              </div>
+              <div class="form-field flex-1">
+                <label for="codeLanguageSelect" class="form-label">Language:</label>
+                <select id="codeLanguageSelect" class="form-select">
+                  <option value="python">Python</option>
+                  <option value="typescript">TypeScript</option>
+                  <option value="javascript">JavaScript</option>
+                  <option value="sql">SQL</option>
+                  <option value="rust">Rust</option>
+                  <option value="go">Go</option>
+                  <option value="cpp">C++</option>
+                  <option value="json">JSON / Schema</option>
+                  <option value="shell">Shell / Bash</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label for="codeNotesInput" class="form-label">Architectural Notes / Invariants (Optional):</label>
+              <input type="text" id="codeNotesInput" class="form-input" placeholder="e.g. Requires sub-10ms response, exponential backoff, zero memory allocations" maxlength="200" />
+            </div>
+
+            <!-- Code Editor Container -->
+            <div class="form-field code-editor-field">
+              <div class="code-editor-header">
+                <span class="editor-title">Code Ingestion Editor</span>
+                <div class="sample-code-buttons">
+                  <button type="button" class="btn-sample-code" data-sample="circuit_breaker">Load Resilient Pattern</button>
+                  <button type="button" class="btn-sample-code" data-sample="vector_rag">Load Vector Search</button>
+                  <button type="button" class="btn-sample-code" data-sample="risk_model">Load Risk Model</button>
+                </div>
+              </div>
+              <textarea
+                id="codeSnippetTextarea"
+                class="code-editor-textarea"
+                placeholder="# Enter the departmental code here...
+# Each time you enter code, the system tokenizes its structure,
+# extracts architectural invariants, and trains the department LLM memory."
+                rows="10"
+                required
+                spellcheck="false"
+              ></textarea>
+              <div class="code-editor-footer">
+                <span id="codeLengthCharCount">0 characters (~0 tokens)</span>
+                <span class="editor-syntax-hint">Syntax-aware AST Tokenizer &amp; Knowledge Extractor</span>
+              </div>
+            </div>
+
+            <!-- Training Action -->
+            <div class="training-submit-bar">
+              <button type="submit" class="btn-train-submit" id="submitTrainCodeBtn">
+                <span class="btn-train-icon">⚡</span>
+                <span id="submitTrainBtnText">Train Model on Code</span>
+              </button>
+              <span class="training-notice">Automatically logs to Google Cloud Logging &amp; increments epoch.</span>
+            </div>
+          </form>
+
+          <!-- Training Animation / Live HUD -->
+          <div class="training-live-hud" id="trainingLiveHud" style="display: none;">
+            <div class="training-hud-spinner"></div>
+            <div class="training-hud-details">
+              <div class="training-hud-phase" id="trainingHudPhase">Tokenizing Code AST...</div>
+              <div class="training-hud-progress-bar">
+                <div class="training-hud-bar-fill" id="trainingHudBarFill"></div>
+              </div>
+              <div class="training-hud-meta" id="trainingHudMeta">Extracting architectural invariants and domain constraints...</div>
+            </div>
+          </div>
+
+          <!-- Training Success Banner -->
+          <div class="training-success-card" id="trainingSuccessCard" style="display: none;">
+            <span class="success-icon">✅</span>
+            <div class="success-body">
+              <div class="success-title" id="trainingSuccessTitle">Model Successfully Trained!</div>
+              <div class="success-desc" id="trainingSuccessDesc">
+                Checkpoint saved. Extracted architectural invariants for department.
+              </div>
+            </div>
+            <button type="button" class="btn-text-action" id="dismissTrainingSuccessBtn">Dismiss</button>
+          </div>
+
+        </div>
+
+        <!-- Right Column: Currently Trained Checkpoints & Invariants for this Department -->
+        <div class="dept-training-history-panel">
+          <div class="panel-section-title">
+            <div class="panel-title-left">
+              <span id="deptCheckpointsTitle">Trained Code Memory</span>
+              <span class="epoch-badge-counter" id="deptEpochCountBadge">Epoch #2</span>
+            </div>
+            <button type="button" class="btn-text-action" id="refreshCheckpointsBtn">Refresh</button>
+          </div>
+
+          <div class="dept-summary-card">
+            <div class="dept-summary-name" id="deptSummaryName">Computer Science &amp; AI Systems</div>
+            <div class="dept-summary-desc" id="deptSummaryDesc">
+              Distributed architectures, machine learning infrastructure, and idempotent microservices.
+            </div>
+            <div class="dept-metrics-row">
+              <div class="dept-metric-item">
+                <span class="metric-val" id="deptMetricCheckpoints">2</span>
+                <span class="metric-lbl">Checkpoints</span>
+              </div>
+              <div class="dept-metric-item">
+                <span class="metric-val" id="deptMetricRules">8</span>
+                <span class="metric-lbl">Extracted Rules</span>
+              </div>
+              <div class="dept-metric-item">
+                <span class="metric-val" id="deptMetricTokens">443</span>
+                <span class="metric-lbl">Trained Tokens</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="checkpoints-list-container" id="checkpointsListContainer">
+            <!-- Populated dynamically -->
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Studio Footer -->
+      <div class="gcp-logs-footer">
+        <span class="gcp-footer-audit">Department Neural Memory Engine • In-Context Few-Shot Training Architecture</span>
+        <button type="button" class="btn-gcp-export" id="closeDeptStudioBottomBtn">
+          Done &amp; Return to Research
+        </button>
+      </div>
+
     </div>
   </div>
 
