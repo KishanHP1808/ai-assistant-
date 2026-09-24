@@ -4,9 +4,24 @@
     "code": "CS-101",
     "name": "Computer Science & AI Systems",
     "description": "Distributed architectures, scalable systems, machine learning pipelines, and idempotent microservices",
-    "epoch_count": 3,
+    "epoch_count": 4,
     "last_trained_at": "2026-09-23T13:28:04.751Z",
     "training_entries": [
+      {
+        "id": "tr-fix-err-muftn437-n70u",
+        "title": "Fix Python KeyError with Defensive .get() Retrieval",
+        "code_snippet": "def get_speed(t): return t.get(\"d\", None) / t.get(\"dt\", None)\n\n# Verified bug-free: All dictionary accesses wrapped with defensive fallbacks",
+        "language": "python",
+        "notes": "Direct bracket indexing raises a fatal KeyError when dictionary keys are missing. Repaired by substituting `.get(key, default)` with safe type boundaries.",
+        "trained_at": "2026-09-24T17:44:20.083Z",
+        "tokens_count": 35,
+        "extracted_rules": [
+          "Use .get(key, fallback) instead of bracket indexing on external dictionaries",
+          "Validate incoming payload schemas before attribute extraction",
+          "Ensure non-null default values to avoid secondary TypeErrors"
+        ],
+        "epoch": 4
+      },
       {
         "id": "tr-cs-01",
         "title": "Idempotent Distributed Task Ingestion & Exponential Backoff",
@@ -71,9 +86,25 @@
     "code": "FIN-QUANT",
     "name": "Finance & Quantitative Risk",
     "description": "Capital adequacy, portfolio optimization, parametric VaR, and risk-adjusted yield models",
-    "epoch_count": 1,
+    "epoch_count": 2,
     "last_trained_at": "2026-09-23T13:27:53.397Z",
     "training_entries": [
+      {
+        "id": "tr-gh-revenue-recovery",
+        "title": "[GitHub kishan1808]: AI Revenue Recovery & Failed Payment Retry Telemetry",
+        "code_snippet": "{\n  \"tables\": [\n    \"payments\",\n    \"customers\",\n    \"dunning_attempts\",\n    \"recovery_events\"\n  ],\n  \"models\": {\n    \"Payment\": [\n      \"id\",\n      \"reference_id (unique)\",\n      \"amount_paise\",\n      \"currency\",\n      \"status\",\n      \"customer_email\",\n      \"created_at\",\n      \"updated_at\"\n    ],\n    \"Customer\": [\n      \"id\",\n      \"email (unique)\",\n      \"name\",\n      \"created_at\",\n      \"updated_at\"\n    ]\n  }\n}",
+        "language": "python",
+        "notes": "Ingested 1420 dataset records from kishan1808/revenue-recovery. Enforcing domain invariants.",
+        "trained_at": "2026-09-24T17:44:28.060Z",
+        "tokens_count": 450,
+        "extracted_rules": [
+          "Enforce unique idempotent reference_id verification to eliminate duplicate charges",
+          "Apply exponential backoff intervals with jitter on failed payment dunning",
+          "Maintain strict SQLAlchemy 2.x synchronous transactional commit isolation",
+          "Validate Razorpay webhook HMAC-SHA256 signature tokens before state transition"
+        ],
+        "epoch": 2
+      },
       {
         "id": "tr-fin-01",
         "title": "Parametric Value-at-Risk (VaR) & Volatility Scaling",

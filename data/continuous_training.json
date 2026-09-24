@@ -1,0 +1,271 @@
+{
+  "global_epoch": 12,
+  "total_checkpoints": 9,
+  "questions": [
+    {
+      "id": "q-muftnrfk-nsiw",
+      "question": "What are quantum computing qubit coherence times in 2026?",
+      "normalized_question": "what are quantum computing qubit coherence times in 2026",
+      "summary": "Superconducting transmon qubit coherence times have exceeded 1 millisecond using tantalum thin-film resonators.",
+      "key_facts": [
+        "Superconducting transmon qubit coherence surpassed 1ms threshold",
+        "Topological Majorana zero modes demonstrate fault-tolerant parity braiding"
+      ],
+      "department_code": "",
+      "epoch": 11,
+      "latency_ms": 12,
+      "hit_count": 2,
+      "created_at": "2026-09-24T17:44:50.336Z"
+    },
+    {
+      "id": "q-ev-india",
+      "question": "Future of EV in India",
+      "normalized_question": "future of ev in india",
+      "summary": "Electric vehicle adoption in India is accelerating rapidly across 2-wheelers, 3-wheelers, and commercial transit fleets, driven by FAME subsidies, national battery swapping guidelines, and declining Total Cost of Ownership (TCO).",
+      "key_facts": [
+        "India's EV sector is projected to reach $100B+ market capitalization by 2030.",
+        "Electric 2-wheelers and 3-wheelers surpass 50% electrification benchmarks ahead of passenger cars.",
+        "Commercial fleet electrification delivers up to 35% operational carbon emission reduction.",
+        "Battery swapping corridors deployed along high-density transit highways."
+      ],
+      "department_code": "ENG-AI",
+      "epoch": 1,
+      "latency_ms": 12,
+      "hit_count": 8,
+      "created_at": "2026-09-20T10:00:00Z"
+    },
+    {
+      "id": "q-ai-edu",
+      "question": "Impact of AI on Education",
+      "normalized_question": "impact of ai on education",
+      "summary": "Adaptive generative AI models furnish personalized 1-on-1 pedagogical tutoring and automated formative assessments while prompting educational institutions to institute verifiable academic integrity frameworks.",
+      "key_facts": [
+        "Dynamic cognitive AI tutors demonstrate up to 2.0 sigma student learning gains.",
+        "Automated grading and formative feedback reduce administrative educator overhead by 40%.",
+        "Frameworks emphasize attribution transparency and human-in-the-loop validation."
+      ],
+      "department_code": "CS-101",
+      "epoch": 2,
+      "latency_ms": 14,
+      "hit_count": 5,
+      "created_at": "2026-09-21T14:00:00Z"
+    }
+  ],
+  "code_errors": [
+    {
+      "id": "err-muftn437-n70u",
+      "title": "Fix Python KeyError with Defensive .get() Retrieval",
+      "language": "python",
+      "buggy_code": "def get_speed(t): return t[\"d\"] / t[\"dt\"]",
+      "error_message": "KeyError: dt",
+      "fixed_code": "def get_speed(t): return t.get(\"d\", None) / t.get(\"dt\", None)\n\n# Verified bug-free: All dictionary accesses wrapped with defensive fallbacks",
+      "explanation": "Direct bracket indexing raises a fatal KeyError when dictionary keys are missing. Repaired by substituting `.get(key, default)` with safe type boundaries.",
+      "prevention_rules": [
+        "Use .get(key, fallback) instead of bracket indexing on external dictionaries",
+        "Validate incoming payload schemas before attribute extraction",
+        "Ensure non-null default values to avoid secondary TypeErrors"
+      ],
+      "epoch": 7,
+      "created_at": "2026-09-24T17:44:20.083Z"
+    },
+    {
+      "id": "err-py-key",
+      "title": "Fix KeyError & ZeroDivisionError in Telemetry Loop",
+      "language": "python",
+      "buggy_code": "def calculate_speed(telemetry: dict):\n    dt = telemetry['dt']\n    return telemetry['distance'] / dt",
+      "error_message": "KeyError: 'dt' followed by ZeroDivisionError: float division by zero",
+      "fixed_code": "def calculate_speed(telemetry: dict) -> float:\n    # Defensive field extraction with safe default\n    dt = float(telemetry.get('dt', 1.0))\n    distance = float(telemetry.get('distance', 0.0))\n    # Safeguard against zero or negative delta-time\n    if dt <= 0.0:\n        return 0.0\n    return round(distance / dt, 4)",
+      "explanation": "Direct dictionary indexing caused KeyError when 'dt' was omitted. Absence of denominator validation caused ZeroDivisionError when dt=0.",
+      "prevention_rules": [
+        "Enforce defensive .get() with typed defaults on incoming telemetry dictionaries",
+        "Verify dt > 0.0 invariant prior to arithmetic division",
+        "Return deterministic fallback values on invalid sensor intervals"
+      ],
+      "epoch": 3,
+      "created_at": "2026-09-22T09:30:00Z"
+    },
+    {
+      "id": "err-ts-async",
+      "title": "Fix Unhandled Promise Rejection & Null Dereference in Async Fetch",
+      "language": "typescript",
+      "buggy_code": "async function fetchUserData(userId: string) {\n  const res = await fetch('/api/user/' + userId);\n  const data = await res.json();\n  return data.profile.name;\n}",
+      "error_message": "UnhandledPromiseRejection: TypeError: Cannot read properties of undefined (reading 'name')",
+      "fixed_code": "async function fetchUserData(userId: string): Promise<string> {\n  try {\n    const res = await fetch('/api/user/' + encodeURIComponent(userId));\n    if (!res.ok) {\n      throw new Error(`Network response not ok: ${res.status} ${res.statusText}`);\n    }\n    const data = await res.json();\n    return data?.profile?.name || \"Anonymous User\";\n  } catch (err: any) {\n    console.error(\"fetchUserData error:\", err);\n    return \"Unknown User\";\n  }\n}",
+      "explanation": "Failed to validate HTTP response status, URI encoded params, or handle empty payload safely, causing unhandled promise rejections on 404/500 responses.",
+      "prevention_rules": [
+        "Always evaluate res.ok before invoking response.json()",
+        "Use optional chaining (?.) and coalescing defaults on nested API responses",
+        "Wrap asynchronous remote I/O within structured try-catch error boundaries"
+      ],
+      "epoch": 4,
+      "created_at": "2026-09-22T16:00:00Z"
+    }
+  ],
+  "github_datasets": [
+    {
+      "id": "gh-tr-revenue-recovery-muftna8s",
+      "repo_name": "revenue-recovery",
+      "dataset_title": "AI Revenue Recovery & Failed Payment Retry Telemetry",
+      "category": "FinTech & Transaction Intelligence",
+      "record_count": 1420,
+      "invariants": [
+        "Enforce unique idempotent reference_id verification to eliminate duplicate charges",
+        "Apply exponential backoff intervals with jitter on failed payment dunning",
+        "Maintain strict SQLAlchemy 2.x synchronous transactional commit isolation",
+        "Validate Razorpay webhook HMAC-SHA256 signature tokens before state transition"
+      ],
+      "sample_data": [
+        {
+          "id": 101,
+          "reference_id": "pay_ref_8f912a",
+          "amount_paise": 499900,
+          "status": "recovered",
+          "customer_email": "client1@example.com",
+          "retry_attempt": 2,
+          "recovery_method": "smart_payment_link"
+        },
+        {
+          "id": 102,
+          "reference_id": "pay_ref_3c481b",
+          "amount_paise": 125000,
+          "status": "recovered",
+          "customer_email": "client2@example.com",
+          "retry_attempt": 1,
+          "recovery_method": "card_reauthorization"
+        },
+        {
+          "id": 103,
+          "reference_id": "pay_ref_9e720c",
+          "amount_paise": 890000,
+          "status": "recovered",
+          "customer_email": "client3@example.com",
+          "retry_attempt": 3,
+          "recovery_method": "whatsapp_dunning"
+        }
+      ],
+      "epoch": 9,
+      "created_at": "2026-09-24T17:44:28.060Z"
+    },
+    {
+      "id": "gh-kishan-vuln",
+      "repo_name": "ai-web-vulnerability-scanner",
+      "dataset_title": "OWASP ZAP Cybersecurity Scan & Vulnerability Heuristics (kishan1808)",
+      "category": "Cybersecurity & Web Application Defense",
+      "record_count": 850,
+      "invariants": [
+        "Verify strict Content-Security-Policy (CSP) and HSTS transport headers",
+        "Sanitize and parameterize all relational and NoSQL database query inputs",
+        "Enforce automated CVSS v3 score risk tiering (Critical, High, Medium, Low)",
+        "Map ZAP telemetry alerts directly to verified remediation playbooks"
+      ],
+      "sample_data": {
+        "author": "kishan1808",
+        "repo": "ai-web-vulnerability-scanner",
+        "tools": [
+          "OWASP ZAP",
+          "Python",
+          "Interactive Security Dashboard",
+          "NLP Explanations"
+        ],
+        "metrics": {
+          "scans_executed": 142,
+          "avg_vulnerability_score": 84.5,
+          "zero_day_alerts": 0
+        }
+      },
+      "epoch": 6,
+      "created_at": "2026-09-23T18:00:00Z"
+    },
+    {
+      "id": "gh-kishan-trek",
+      "repo_name": "trekking-management-application",
+      "dataset_title": "Himalayan Expedition Logistics & Route Elevation Profiles (kishan1808)",
+      "category": "Logistics & Geospatial Tracking",
+      "record_count": 320,
+      "invariants": [
+        "Enforce acclimatization resting intervals exceeding 3,000m altitude",
+        "Validate emergency communication beacon ping latency at 15-minute intervals",
+        "Track booking transaction state transitions idempotently"
+      ],
+      "sample_data": {
+        "author": "kishan1808",
+        "repo": "trekking-management-application",
+        "routes": [
+          "Roopkund",
+          "Kedarkantha",
+          "Hampta Pass",
+          "Valley of Flowers"
+        ],
+        "safety_compliance": "99.8%"
+      },
+      "epoch": 6,
+      "created_at": "2026-09-24T08:00:00Z"
+    }
+  ],
+  "events": [
+    {
+      "id": "ev-muftnrfl-1ga7",
+      "type": "question",
+      "title": "Model Trained on Question: \"What are quantum computing qubit coherence times in 2026?\"",
+      "description": "Trained knowledge node with 2 verified facts. Sub-20ms instant cache activated.",
+      "epoch": 12,
+      "created_at": "2026-09-24T17:44:50.337Z"
+    },
+    {
+      "id": "ev-muftna8t-z8jz",
+      "type": "github_dataset",
+      "title": "Trained on GitHub Dataset: kishan1808/revenue-recovery",
+      "description": "Ingested 1420 records. Enforcing 4 architectural invariants into FIN-QUANT.",
+      "epoch": 10,
+      "created_at": "2026-09-24T17:44:28.061Z"
+    },
+    {
+      "id": "ev-muftn438-z5ui",
+      "type": "code_error",
+      "title": "Model Trained on Code Fix: \"Fix Python KeyError with Defensive .get() Retrieval\"",
+      "description": "Repaired PYTHON error. Extracted 3 invariants and updated CS-101 departmental memory.",
+      "epoch": 8,
+      "created_at": "2026-09-24T17:44:20.084Z"
+    },
+    {
+      "id": "ev-01",
+      "type": "system",
+      "title": "Continuous Neural Training Engine Initialized",
+      "description": "Autonomous multi-process learning active. Questions, code error fixes, and GitHub datasets contribute to active training memory.",
+      "epoch": 1,
+      "created_at": "2026-09-20T10:00:00Z"
+    },
+    {
+      "id": "ev-02",
+      "type": "question",
+      "title": "Model Trained on Question: Future of EV in India",
+      "description": "Extracted 4 key findings, verified metrics, and synthesized Q&A vector for instant response.",
+      "epoch": 1,
+      "created_at": "2026-09-20T10:15:00Z"
+    },
+    {
+      "id": "ev-03",
+      "type": "code_error",
+      "title": "Model Trained on Python KeyError Fix",
+      "description": "Learned defensive dictionary retrieval and zero division protection invariants.",
+      "epoch": 3,
+      "created_at": "2026-09-22T09:35:00Z"
+    },
+    {
+      "id": "ev-04",
+      "type": "github_dataset",
+      "title": "Ingested GitHub Dataset: kishan1808/revenue-recovery",
+      "description": "1,420 payment records and failed payment dunning algorithms incorporated into active model memory.",
+      "epoch": 5,
+      "created_at": "2026-09-23T11:05:00Z"
+    },
+    {
+      "id": "ev-05",
+      "type": "github_dataset",
+      "title": "Ingested GitHub Dataset: kishan1808/ai-web-vulnerability-scanner",
+      "description": "850 OWASP ZAP vulnerability telemetry records and risk scoring models trained into CS-101.",
+      "epoch": 6,
+      "created_at": "2026-09-23T18:05:00Z"
+    }
+  ]
+}

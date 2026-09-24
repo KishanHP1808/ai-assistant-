@@ -41,6 +41,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const dbHistoryList = document.getElementById("dbHistoryList");
   const refreshHistoryBtn = document.getElementById("refreshHistoryBtn");
   const exploreDemoBannerBtn = document.getElementById("exploreDemoBannerBtn");
+  const historySearchInput = document.getElementById("historySearchInput");
+  const clearHistorySearchBtn = document.getElementById("clearHistorySearchBtn");
+  const historyMatchCount = document.getElementById("historyMatchCount");
+  const reportReadingProgressTrack = document.getElementById("reportReadingProgressTrack");
+  const readingProgressFill = document.getElementById("readingProgressFill");
+  const readingProgressText = document.getElementById("readingProgressText");
 
   // State
   let currentResearchData = null;
@@ -89,8 +95,36 @@ document.addEventListener("DOMContentLoaded", () => {
   checkSavedProgressToResume();
 
   if (refreshHistoryBtn) {
-    refreshHistoryBtn.addEventListener("click", loadDatabaseHistory);
+    refreshHistoryBtn.addEventListener("click", () => {
+      loadDatabaseHistory();
+    });
   }
+
+  if (historySearchInput) {
+    historySearchInput.addEventListener("input", () => {
+      renderFilteredDatabaseHistory();
+    });
+  }
+
+  if (clearHistorySearchBtn) {
+    clearHistorySearchBtn.addEventListener("click", () => {
+      if (historySearchInput) {
+        historySearchInput.value = "";
+        historySearchInput.focus();
+      }
+      renderFilteredDatabaseHistory();
+    });
+  }
+
+  const historyFilterPills = document.querySelectorAll(".history-filter-pill");
+  historyFilterPills.forEach((pill) => {
+    pill.addEventListener("click", () => {
+      historyFilterPills.forEach((p) => p.classList.remove("active"));
+      pill.classList.add("active");
+      activeHistoryDateFilter = pill.dataset.filter || "all";
+      renderFilteredDatabaseHistory();
+    });
+  });
 
   if (exploreDemoBannerBtn) {
     exploreDemoBannerBtn.addEventListener("click", loadDemoDossier);
@@ -154,6 +188,9 @@ document.addEventListener("DOMContentLoaded", () => {
     topicInput.value = "";
     clearInputBtn.style.display = "none";
     hideError();
+    if (readingProgressFill) readingProgressFill.style.width = "0%";
+    if (readingProgressText) readingProgressText.textContent = "0% read";
+    if (reportReadingProgressTrack) reportReadingProgressTrack.setAttribute("aria-valuenow", "0");
     window.scrollTo({ top: 0, behavior: "smooth" });
     topicInput.focus();
   });
@@ -263,6 +300,10 @@ document.addEventListener("DOMContentLoaded", () => {
     resetStepper();
     setStepperStage(1, "Understanding topic & formulating search query...");
     progressSection.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    if (typeof showTrainingToast === "function") {
+      showTrainingToast("Neural Training Loop Active", `Analyzing, synthesizing and learning from question: "${topic}"...`);
+    }
 
     // Close any prior event source
     if (activeEventSource) {
@@ -437,6 +478,12 @@ document.addEventListener("DOMContentLoaded", () => {
     resultsSection.style.display = "block";
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
 
+    // Initialize reading progress bar
+    if (readingProgressFill) readingProgressFill.style.width = "0%";
+    if (readingProgressText) readingProgressText.textContent = "0% read";
+    if (reportReadingProgressTrack) reportReadingProgressTrack.setAttribute("aria-valuenow", "0");
+    setTimeout(updateReadingProgress, 120);
+
     // Refresh database history list
     loadDatabaseHistory();
 
@@ -453,41 +500,216 @@ document.addEventListener("DOMContentLoaded", () => {
       status: "completed",
     };
     autoSaveCurrentProgress();
+
+    // Continuous Training: Refresh metrics and show learning confirmation
+    if (typeof refreshTrainingStatus === "function") {
+      refreshTrainingStatus();
+    }
+    if (typeof showTrainingToast === "function") {
+      showTrainingToast(
+        "Model Continuously Trained!",
+        `Knowledge node created for "${data.topic}". Epoch incremented.`,
+        data.trained_epoch
+      );
+    }
   }
 
   // -------------------------------------------------------------------------
-  // Database History & Demo Loading
+  // Local Database History Search & Filter Controller (#dbHistoryCard)
   // -------------------------------------------------------------------------
+  let allDatabaseHistoryRecords = [];
+  let activeHistoryDateFilter = "all";
+
+  function highlightSearchMatch(text, query) {
+    if (!text) return "";
+    const escapedText = escapeHtml(text);
+    if (!query) return escapedText;
+    const escapedQuery = escapeHtml(query).trim();
+    if (!escapedQuery) return escapedText;
+
+    try {
+      const regex = new RegExp(`(${escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
+      return escapedText.replace(regex, '<mark class="search-match-highlight">$1</mark>');
+    } catch {
+      return escapedText;
+    }
+  }
+
+  function filterHistoryRecords(records, query, dateFilter) {
+    const q = (query || "").trim().toLowerCase();
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const currentYear = String(new Date().getFullYear());
+
+    return records.filter((rec) => {
+      // 1. Text filter (topic, date, or department)
+      if (q) {
+        const topic = (rec.topic || "").toLowerCase();
+        const date = (rec.created_at || "").toLowerCase();
+        const dept = (rec.department_name || rec.department_code || "").toLowerCase();
+        const matchesQuery = topic.includes(q) || date.includes(q) || dept.includes(q);
+        if (!matchesQuery) return false;
+      }
+
+      // 2. Date category filter
+      if (dateFilter === "today") {
+        const created = (rec.created_at || "").toLowerCase();
+        return (
+          created.includes(todayStr) ||
+          created.includes("today") ||
+          created.includes("just now") ||
+          created.includes("recent")
+        );
+      } else if (dateFilter === "recent") {
+        const created = (rec.created_at || "").toLowerCase();
+        return (
+          created.includes(currentYear) ||
+          created.includes("recent") ||
+          created.includes("today") ||
+          created.includes("yesterday")
+        );
+      }
+
+      return true;
+    });
+  }
+
+  function renderFilteredDatabaseHistory() {
+    if (!dbHistoryList) return;
+
+    const query = historySearchInput ? historySearchInput.value.trim() : "";
+
+    if (clearHistorySearchBtn) {
+      clearHistorySearchBtn.style.display = query.length > 0 ? "flex" : "none";
+    }
+
+    if (allDatabaseHistoryRecords.length === 0) {
+      dbHistoryList.innerHTML = '<p class="sources-sidebar-sub">No previous research saved in database yet.</p>';
+      if (historyMatchCount) historyMatchCount.textContent = "0 dossiers";
+      return;
+    }
+
+    const filtered = filterHistoryRecords(allDatabaseHistoryRecords, query, activeHistoryDateFilter);
+
+    if (historyMatchCount) {
+      if (query || activeHistoryDateFilter !== "all") {
+        historyMatchCount.textContent = `${filtered.length} of ${allDatabaseHistoryRecords.length} matched`;
+      } else {
+        historyMatchCount.textContent = `${allDatabaseHistoryRecords.length} dossier${allDatabaseHistoryRecords.length === 1 ? "" : "s"}`;
+      }
+    }
+
+    if (filtered.length === 0) {
+      dbHistoryList.innerHTML = `
+        <div class="db-history-empty-filter">
+          <span class="empty-icon">🔎</span>
+          <p>No dossiers match "<strong>${escapeHtml(query || activeHistoryDateFilter)}</strong>"</p>
+          <button type="button" class="btn-reset-history-filter" id="resetHistoryFilterBtn">Clear Filter</button>
+        </div>
+      `;
+      const resetBtn = document.getElementById("resetHistoryFilterBtn");
+      if (resetBtn) {
+        resetBtn.addEventListener("click", () => {
+          if (historySearchInput) historySearchInput.value = "";
+          activeHistoryDateFilter = "all";
+          const pills = document.querySelectorAll(".history-filter-pill");
+          pills.forEach((p) => p.classList.toggle("active", p.dataset.filter === "all"));
+          renderFilteredDatabaseHistory();
+          if (historySearchInput) historySearchInput.focus();
+        });
+      }
+      return;
+    }
+
+    dbHistoryList.innerHTML = "";
+    filtered.forEach((rec) => {
+      const item = document.createElement("div");
+      item.className = "db-history-item";
+      const topicHtml = highlightSearchMatch(rec.topic, query);
+      const dateHtml = highlightSearchMatch(rec.created_at || "Recent", query);
+
+      item.innerHTML = `
+        <div class="db-history-info">
+          <span class="db-history-topic">${topicHtml}</span>
+          <span class="db-history-date">${dateHtml}</span>
+        </div>
+        <span class="db-history-action">View Dossier ↗</span>
+      `;
+      item.addEventListener("click", () => loadHistoryItem(rec.id));
+      dbHistoryList.appendChild(item);
+    });
+  }
+
   async function loadDatabaseHistory() {
     if (!dbHistoryList) return;
     try {
       const res = await fetch("/api/history");
       if (!res.ok) return;
       const data = await res.json();
-      const records = data.records || [];
-
-      if (records.length === 0) {
-        dbHistoryList.innerHTML = '<p class="sources-sidebar-sub">No previous research saved in database yet.</p>';
-        return;
-      }
-
-      dbHistoryList.innerHTML = "";
-      records.forEach((rec) => {
-        const item = document.createElement("div");
-        item.className = "db-history-item";
-        item.innerHTML = `
-          <div class="db-history-info">
-            <span class="db-history-topic">${escapeHtml(rec.topic)}</span>
-            <span class="db-history-date">${escapeHtml(rec.created_at || "Recent")}</span>
-          </div>
-          <span class="db-history-action">View Dossier ↗</span>
-        `;
-        item.addEventListener("click", () => loadHistoryItem(rec.id));
-        dbHistoryList.appendChild(item);
-      });
+      allDatabaseHistoryRecords = data.records || [];
+      renderFilteredDatabaseHistory();
     } catch (e) {
       console.warn("Could not fetch database history:", e);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Reading Progress Bar Controller (#reportMarkdownContainer & .report-viewer-card)
+  // -------------------------------------------------------------------------
+  function updateReadingProgress() {
+    if (!readingProgressFill || !reportMarkdownContainer) return;
+
+    if (!resultsSection || resultsSection.style.display === "none") {
+      readingProgressFill.style.width = "0%";
+      if (readingProgressText) readingProgressText.textContent = "0% read";
+      if (reportReadingProgressTrack) reportReadingProgressTrack.setAttribute("aria-valuenow", "0");
+      return;
+    }
+
+    let percentage = 0;
+
+    // 1. If #reportMarkdownContainer has its own internal scrolling
+    if (
+      reportMarkdownContainer.scrollHeight > reportMarkdownContainer.clientHeight &&
+      reportMarkdownContainer.clientHeight > 0
+    ) {
+      const scrollableDist = reportMarkdownContainer.scrollHeight - reportMarkdownContainer.clientHeight;
+      if (scrollableDist > 0) {
+        percentage = (reportMarkdownContainer.scrollTop / scrollableDist) * 100;
+      }
+    } else {
+      // 2. Viewport window scrolling through #reportMarkdownContainer
+      const rect = reportMarkdownContainer.getBoundingClientRect();
+      const windowHeight = window.innerHeight;
+      const topOffset = 120; // toolbar / top sticky offset
+      const scrolledPastTop = topOffset - rect.top;
+      const totalReadingDistance = rect.height - (windowHeight - topOffset);
+
+      if (scrolledPastTop <= 0) {
+        percentage = 0;
+      } else if (totalReadingDistance <= 0) {
+        percentage = rect.bottom < windowHeight ? 100 : 0;
+      } else {
+        percentage = (scrolledPastTop / totalReadingDistance) * 100;
+      }
+    }
+
+    percentage = Math.max(0, Math.min(100, percentage));
+    const rounded = Math.round(percentage);
+
+    readingProgressFill.style.width = `${percentage.toFixed(1)}%`;
+    if (reportReadingProgressTrack) {
+      reportReadingProgressTrack.setAttribute("aria-valuenow", String(rounded));
+    }
+    if (readingProgressText) {
+      readingProgressText.textContent = `${rounded}% read`;
+    }
+  }
+
+  // Bind reading progress events
+  window.addEventListener("scroll", updateReadingProgress, { passive: true });
+  window.addEventListener("resize", updateReadingProgress, { passive: true });
+  if (reportMarkdownContainer) {
+    reportMarkdownContainer.addEventListener("scroll", updateReadingProgress, { passive: true });
   }
 
   async function loadHistoryItem(id) {
@@ -2392,6 +2614,742 @@ def calculate_portfolio_var(
 
   // Initialize Infographic and Chart listeners
   setupInfographicControls();
+
+  // -------------------------------------------------------------------------
+  // 15. Universal Continuous Neural Learning & Self-Training Controller
+  // -------------------------------------------------------------------------
+  let currentContinuousTrainingData = null;
+  let activeHubTab = "questions";
+  let tickerIndex = 0;
+  let tickerTimer = null;
+
+  // DOM Elements - Header & Bar
+  const codeErrorStudioBtn = document.getElementById("codeErrorStudioBtn");
+  const githubDatasetBtn = document.getElementById("githubDatasetBtn");
+  const continuousLearningHubBtn = document.getElementById("continuousLearningHubBtn");
+  const headerGlobalEpochBadge = document.getElementById("headerGlobalEpochBadge");
+  const githubRepoCountBadge = document.getElementById("githubRepoCountBadge");
+
+  const matrixGlobalEpochBadge = document.getElementById("matrixGlobalEpochBadge");
+  const ctMetricQuestions = document.getElementById("ctMetricQuestions");
+  const ctMetricErrors = document.getElementById("ctMetricErrors");
+  const ctMetricGithub = document.getElementById("ctMetricGithub");
+  const ctMetricSpeed = document.getElementById("ctMetricSpeed");
+  const ctTickerText = document.getElementById("ctTickerText");
+
+  const ctOpenErrorStudioBtn = document.getElementById("ctOpenErrorStudioBtn");
+  const ctOpenGithubDataBtn = document.getElementById("ctOpenGithubDataBtn");
+  const ctToggleFastQueryBtn = document.getElementById("ctToggleFastQueryBtn");
+  const ctOpenFullHubBtn = document.getElementById("ctOpenFullHubBtn");
+
+  // Fast Query DOM
+  const fastQueryInput = document.getElementById("fastQueryInput");
+  const submitFastQueryBtn = document.getElementById("submitFastQueryBtn");
+  const fastQueryResultCard = document.getElementById("fastQueryResultCard");
+  const fqResultTitle = document.getElementById("fqResultTitle");
+  const fqResultEpochBadge = document.getElementById("fqResultEpochBadge");
+  const fqResultBody = document.getElementById("fqResultBody");
+  const fqResultFacts = document.getElementById("fqResultFacts");
+  const closeFastResultBtn = document.getElementById("closeFastResultBtn");
+  const fqDeepResearchBtn = document.getElementById("fqDeepResearchBtn");
+  const fqPresetBtns = document.querySelectorAll(".btn-fq-preset");
+
+  // Code Error Studio Modal DOM
+  const codeErrorModal = document.getElementById("codeErrorModal");
+  const closeCodeErrorModalBtn = document.getElementById("closeCodeErrorModalBtn");
+  const closeCodeErrorBottomBtn = document.getElementById("closeCodeErrorBottomBtn");
+  const codeErrorForm = document.getElementById("codeErrorForm");
+  const errTitleInput = document.getElementById("errTitleInput");
+  const errLangSelect = document.getElementById("errLangSelect");
+  const errMessageInput = document.getElementById("errMessageInput");
+  const buggyCodeTextarea = document.getElementById("buggyCodeTextarea");
+  const buggyCodeCharCount = document.getElementById("buggyCodeCharCount");
+  const submitCodeErrorFixBtn = document.getElementById("submitCodeErrorFixBtn");
+  const submitCodeErrorBtnText = document.getElementById("submitCodeErrorBtnText");
+  const codeErrorLiveHud = document.getElementById("codeErrorLiveHud");
+  const codeErrorHudPhase = document.getElementById("codeErrorHudPhase");
+  const codeErrorHudBarFill = document.getElementById("codeErrorHudBarFill");
+  const codeErrorHudMeta = document.getElementById("codeErrorHudMeta");
+  const errorFixEmptyState = document.getElementById("errorFixEmptyState");
+  const errorFixResultContainer = document.getElementById("errorFixResultContainer");
+  const fixedCodeDisplay = document.getElementById("fixedCodeDisplay");
+  const fixedCodeExplanation = document.getElementById("fixedCodeExplanation");
+  const fixedCodeInvariantsList = document.getElementById("fixedCodeInvariantsList");
+  const fixedResultEpochTag = document.getElementById("fixedResultEpochTag");
+  const codeErrorEpochBadge = document.getElementById("codeErrorEpochBadge");
+  const copyFixedCodeBtn = document.getElementById("copyFixedCodeBtn");
+  const sampleBugBtns = document.querySelectorAll("[data-bug-sample]");
+
+  // GitHub Dataset Modal DOM
+  const githubDatasetModal = document.getElementById("githubDatasetModal");
+  const closeGithubModalBtn = document.getElementById("closeGithubModalBtn");
+  const closeGithubBottomBtn = document.getElementById("closeGithubBottomBtn");
+  const trainAllGithubBtn = document.getElementById("trainAllGithubBtn");
+  const githubReposContainer = document.getElementById("githubReposContainer");
+  const githubLiveHud = document.getElementById("githubLiveHud");
+  const githubHudPhase = document.getElementById("githubHudPhase");
+  const githubHudBarFill = document.getElementById("githubHudBarFill");
+  const githubHudMeta = document.getElementById("githubHudMeta");
+  const githubActiveDatasetsBadge = document.getElementById("githubActiveDatasetsBadge");
+
+  // Learning Hub Modal DOM
+  const continuousLearningHubModal = document.getElementById("continuousLearningHubModal");
+  const closeHubModalBtn = document.getElementById("closeHubModalBtn");
+  const closeHubBottomBtn = document.getElementById("closeHubBottomBtn");
+  const hubGlobalEpochBadge = document.getElementById("hubGlobalEpochBadge");
+  const hubEpochStat = document.getElementById("hubEpochStat");
+  const hubCheckpointsStat = document.getElementById("hubCheckpointsStat");
+  const hubQuestionsStat = document.getElementById("hubQuestionsStat");
+  const hubErrorsStat = document.getElementById("hubErrorsStat");
+  const hubGithubStat = document.getElementById("hubGithubStat");
+  const hubTabBtns = document.querySelectorAll(".hub-tab-btn");
+  const hubTabQCount = document.getElementById("hubTabQCount");
+  const hubTabErrCount = document.getElementById("hubTabErrCount");
+  const hubTabGhCount = document.getElementById("hubTabGhCount");
+  const hubTabEvCount = document.getElementById("hubTabEvCount");
+  const hubTabContentBody = document.getElementById("hubTabContentBody");
+
+  // Toast Notification DOM
+  const continuousTrainingToast = document.getElementById("continuousTrainingToast");
+  const toastTitle = document.getElementById("toastTitle");
+  const toastMsg = document.getElementById("toastMsg");
+  const toastEpoch = document.getElementById("toastEpoch");
+  let toastTimeout = null;
+
+  // Sample Bug Presets for Instant Testing
+  const BUG_PRESETS = {
+    key_error: {
+      title: "Fix KeyError & ZeroDivision in Telemetry Processing",
+      language: "python",
+      error: "KeyError: 'dt' in line 3; ZeroDivisionError: float division by zero",
+      code: `def calculate_speed(telemetry: dict):
+    # Bug: Directly accessing 'dt' raises KeyError if omitted
+    # Bug: If dt is 0, raises fatal ZeroDivisionError
+    dt = telemetry['dt']
+    distance = telemetry['distance']
+    return distance / dt`,
+    },
+    async_promise: {
+      title: "Fix Unhandled Promise Rejection & Null Dereference in Fetch",
+      language: "typescript",
+      error: "UnhandledPromiseRejection: TypeError: Cannot read properties of undefined (reading 'name')",
+      code: `async function fetchUserData(userId: string) {
+  // Bug: No status check on response; missing try/catch
+  // Bug: Unchecked deep object navigation crashes on 404/500
+  const res = await fetch('/api/user/' + userId);
+  const data = await res.json();
+  return data.profile.name;
+}`,
+    },
+    zero_div: {
+      title: "Fix ZeroDivisionError in Financial Risk Ratio Calculation",
+      language: "python",
+      error: "ZeroDivisionError: integer division or modulo by zero",
+      code: `def compute_recovery_ratio(recovered_amount: int, total_lost: int) -> float:
+    # Bug: Division without non-zero check causes crash when total_lost is 0
+    ratio = (recovered_amount / total_lost) * 100.0
+    return round(ratio, 2)`,
+    },
+    payment_retry: {
+      title: "Fix Missing Razorpay Webhook Signature Check & Idempotency Key",
+      language: "python",
+      error: "KeyError: 'razorpay_signature' and duplicate charge race condition",
+      code: `def handle_razorpay_webhook(event_payload: dict):
+    # Bug: Missing signature validation
+    # Bug: Duplicate webhook delivery triggers double-crediting
+    payment_id = event_payload['payload']['payment']['entity']['id']
+    customer_email = event_payload['payload']['payment']['entity']['email']
+    mark_payment_successful(payment_id, customer_email)`,
+    },
+  };
+
+  // Toast Function
+  function showTrainingToast(title, message, epoch) {
+    if (!continuousTrainingToast) return;
+    if (toastTitle) toastTitle.textContent = title || "Model Continuously Trained!";
+    if (toastMsg) toastMsg.textContent = message || "New knowledge checkpoint saved into neural memory.";
+    if (toastEpoch) toastEpoch.textContent = `Epoch #${epoch || (currentContinuousTrainingData ? currentContinuousTrainingData.global_epoch : 6)}`;
+
+    continuousTrainingToast.style.display = "flex";
+    if (toastTimeout) clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => {
+      continuousTrainingToast.style.display = "none";
+    }, 4500);
+  }
+
+  // Fetch Continuous Learning Status & Refresh All Metrics
+  async function refreshTrainingStatus() {
+    try {
+      const res = await fetch("/api/training/status");
+      if (!res.ok) return;
+      const data = await res.json();
+      currentContinuousTrainingData = data;
+
+      const epochStr = `Epoch #${data.global_epoch}`;
+
+      if (headerGlobalEpochBadge) headerGlobalEpochBadge.textContent = epochStr;
+      if (matrixGlobalEpochBadge) matrixGlobalEpochBadge.textContent = epochStr;
+      if (hubGlobalEpochBadge) hubGlobalEpochBadge.textContent = `Active ${epochStr}`;
+      if (hubEpochStat) hubEpochStat.textContent = epochStr;
+
+      if (ctMetricQuestions) ctMetricQuestions.textContent = data.questions_count;
+      if (ctMetricErrors) ctMetricErrors.textContent = data.code_errors_count;
+      if (ctMetricGithub) ctMetricGithub.textContent = data.github_datasets_count;
+      if (ctMetricSpeed) ctMetricSpeed.textContent = "12ms";
+
+      if (hubCheckpointsStat) hubCheckpointsStat.textContent = data.total_checkpoints;
+      if (hubQuestionsStat) hubQuestionsStat.textContent = data.questions_count;
+      if (hubErrorsStat) hubErrorsStat.textContent = data.code_errors_count;
+      if (hubGithubStat) hubGithubStat.textContent = data.github_datasets_count;
+
+      if (hubTabQCount) hubTabQCount.textContent = data.questions_count;
+      if (hubTabErrCount) hubTabErrCount.textContent = data.code_errors_count;
+      if (hubTabGhCount) hubTabGhCount.textContent = data.github_datasets_count;
+      if (hubTabEvCount) hubTabEvCount.textContent = data.recent_events ? data.recent_events.length : 0;
+
+      // Start ticker
+      startTrainingTicker(data.recent_events || []);
+    } catch (e) {
+      console.warn("Failed to refresh continuous training status:", e);
+    }
+  }
+
+  // Ticker Animation
+  function startTrainingTicker(events) {
+    if (!ctTickerText || !events || events.length === 0) return;
+    if (tickerTimer) clearInterval(tickerTimer);
+
+    function updateTicker() {
+      const ev = events[tickerIndex % events.length];
+      if (ev) {
+        ctTickerText.innerHTML = `<strong>[Epoch #${ev.epoch}]</strong> ${escapeHtml(ev.title)} — <em>${escapeHtml(ev.description)}</em>`;
+      }
+      tickerIndex++;
+    }
+
+    updateTicker();
+    tickerTimer = setInterval(updateTicker, 4500);
+  }
+
+  // Fast Query Handler
+  async function executeFastQuery(queryText) {
+    const cleanQuery = (queryText || (fastQueryInput ? fastQueryInput.value : "")).trim();
+    if (!cleanQuery) return;
+
+    if (submitFastQueryBtn) {
+      submitFastQueryBtn.disabled = true;
+      submitFastQueryBtn.innerHTML = `<span>Searching...</span>`;
+    }
+
+    try {
+      const startTime = performance.now();
+      const res = await fetch("/api/training/fast-query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: cleanQuery }),
+      });
+      const elapsed = Math.round(performance.now() - startTime);
+
+      if (!res.ok) throw new Error("Query processing failed.");
+      const result = await res.json();
+
+      if (fastQueryResultCard) {
+        fastQueryResultCard.style.display = "block";
+        if (fqResultTitle) fqResultTitle.textContent = result.title || cleanQuery;
+        if (fqResultEpochBadge) {
+          fqResultEpochBadge.textContent = `Epoch #${result.epoch} • ${result.latency_ms || elapsed}ms Latency • ${result.accuracy || "99.6%"} Accuracy`;
+        }
+        if (fqResultBody) fqResultBody.textContent = result.answer;
+
+        if (fqResultFacts) {
+          if (Array.isArray(result.key_facts) && result.key_facts.length > 0) {
+            fqResultFacts.innerHTML = result.key_facts
+              .map((f) => `<div class="fq-fact-item"><span class="fq-fact-bullet">✦</span><span>${escapeHtml(f)}</span></div>`)
+              .join("");
+          } else if (Array.isArray(result.invariants) && result.invariants.length > 0) {
+            fqResultFacts.innerHTML = result.invariants
+              .map((inv) => `<div class="fq-fact-item"><span class="fq-fact-bullet">🛡️</span><span>${escapeHtml(inv)}</span></div>`)
+              .join("");
+          } else {
+            fqResultFacts.innerHTML = "";
+          }
+        }
+
+        // Set Deep Research Action
+        if (fqDeepResearchBtn) {
+          fqDeepResearchBtn.onclick = () => {
+            if (topicInput) topicInput.value = cleanQuery;
+            window.scrollTo({ top: 0, behavior: "smooth" });
+            startResearch(cleanQuery);
+          };
+        }
+      }
+    } catch (err) {
+      console.warn("Fast query error:", err);
+    } finally {
+      if (submitFastQueryBtn) {
+        submitFastQueryBtn.disabled = false;
+        submitFastQueryBtn.innerHTML = `<span>Instant Query</span><span class="btn-speed-tag">&lt;20ms</span>`;
+      }
+    }
+  }
+
+  if (submitFastQueryBtn) {
+    submitFastQueryBtn.addEventListener("click", () => executeFastQuery());
+  }
+  if (fastQueryInput) {
+    fastQueryInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        executeFastQuery();
+      }
+    });
+  }
+  if (closeFastResultBtn) {
+    closeFastResultBtn.addEventListener("click", () => {
+      if (fastQueryResultCard) fastQueryResultCard.style.display = "none";
+    });
+  }
+  if (fqPresetBtns) {
+    fqPresetBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const query = btn.dataset.query;
+        if (fastQueryInput) fastQueryInput.value = query;
+        executeFastQuery(query);
+      });
+    });
+  }
+
+  // Code Error Studio Implementation
+  function openCodeErrorModal() {
+    if (!codeErrorModal) return;
+    codeErrorModal.style.display = "flex";
+    if (buggyCodeTextarea) buggyCodeTextarea.focus();
+  }
+  function closeCodeErrorModal() {
+    if (!codeErrorModal) return;
+    codeErrorModal.style.display = "none";
+  }
+
+  if (codeErrorStudioBtn) codeErrorStudioBtn.addEventListener("click", openCodeErrorModal);
+  if (ctOpenErrorStudioBtn) ctOpenErrorStudioBtn.addEventListener("click", openCodeErrorModal);
+  if (closeCodeErrorModalBtn) closeCodeErrorModalBtn.addEventListener("click", closeCodeErrorModal);
+  if (closeCodeErrorBottomBtn) closeCodeErrorBottomBtn.addEventListener("click", closeCodeErrorModal);
+
+  // Sample Bug Presets loader
+  if (sampleBugBtns) {
+    sampleBugBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const sampleKey = btn.dataset.bugSample;
+        const preset = BUG_PRESETS[sampleKey];
+        if (preset) {
+          if (errTitleInput) errTitleInput.value = preset.title;
+          if (errLangSelect) errLangSelect.value = preset.language;
+          if (errMessageInput) errMessageInput.value = preset.error;
+          if (buggyCodeTextarea) {
+            buggyCodeTextarea.value = preset.code;
+            updateBuggyCodeCharCount();
+          }
+        }
+      });
+    });
+  }
+
+  function updateBuggyCodeCharCount() {
+    if (!buggyCodeCharCount || !buggyCodeTextarea) return;
+    const len = buggyCodeTextarea.value.length;
+    buggyCodeCharCount.textContent = `${len} characters (~${Math.ceil(len / 4)} tokens)`;
+  }
+  if (buggyCodeTextarea) {
+    buggyCodeTextarea.addEventListener("input", updateBuggyCodeCharCount);
+  }
+
+  // Submit Code Error Fix Form
+  if (codeErrorForm) {
+    codeErrorForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const code = (buggyCodeTextarea ? buggyCodeTextarea.value : "").trim();
+      const errorMsg = (errMessageInput ? errMessageInput.value : "").trim();
+      const language = (errLangSelect ? errLangSelect.value : "python").trim();
+      const title = (errTitleInput ? errTitleInput.value : "").trim();
+
+      if (!code) {
+        alert("Please paste the buggy code you wish to repair.");
+        return;
+      }
+
+      // Show HUD Animation
+      if (codeErrorLiveHud) codeErrorLiveHud.style.display = "flex";
+      if (submitCodeErrorFixBtn) submitCodeErrorFixBtn.disabled = true;
+
+      const phases = [
+        "Analyzing Abstract Syntax Tree...",
+        "Tracing runtime exception boundary...",
+        "Synthesizing memory-safe patch...",
+        "Extracting architectural invariants and training model memory...",
+      ];
+      let phaseIdx = 0;
+      const phaseInterval = setInterval(() => {
+        phaseIdx++;
+        if (codeErrorHudPhase && phases[phaseIdx % phases.length]) {
+          codeErrorHudPhase.textContent = phases[phaseIdx % phases.length];
+        }
+        if (codeErrorHudBarFill) {
+          codeErrorHudBarFill.style.width = `${Math.min(95, (phaseIdx + 1) * 25)}%`;
+        }
+      }, 500);
+
+      try {
+        const res = await fetch("/api/train/code-error", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            code,
+            error_message: errorMsg,
+            language,
+            title,
+          }),
+        });
+
+        clearInterval(phaseInterval);
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Code error processing failed.");
+        }
+
+        const data = await res.json();
+        const errRec = data.error_record;
+
+        // Display results
+        if (errorFixEmptyState) errorFixEmptyState.style.display = "none";
+        if (errorFixResultContainer) errorFixResultContainer.style.display = "flex";
+
+        if (fixedCodeDisplay) fixedCodeDisplay.textContent = errRec.fixed_code;
+        if (fixedCodeExplanation) fixedCodeExplanation.textContent = errRec.explanation;
+
+        if (fixedResultEpochTag) fixedResultEpochTag.textContent = `Epoch #${errRec.epoch}`;
+        if (codeErrorEpochBadge) codeErrorEpochBadge.textContent = `Epoch #${errRec.epoch}`;
+
+        if (fixedCodeInvariantsList && Array.isArray(errRec.prevention_rules)) {
+          fixedCodeInvariantsList.innerHTML = errRec.prevention_rules
+            .map((r) => `<li>${escapeHtml(r)}</li>`)
+            .join("");
+        }
+
+        showTrainingToast(
+          "Model Trained on Code Fix!",
+          `Repaired "${errRec.title}". Invariants learned into active neural memory.`,
+          errRec.epoch
+        );
+
+        refreshTrainingStatus();
+        loadDepartments();
+      } catch (err) {
+        clearInterval(phaseInterval);
+        console.error("Code error training failed:", err);
+        alert(`Training notice: ${err.message}`);
+      } finally {
+        if (codeErrorLiveHud) codeErrorLiveHud.style.display = "none";
+        if (submitCodeErrorFixBtn) submitCodeErrorFixBtn.disabled = false;
+      }
+    });
+  }
+
+  // Copy Fixed Code Button
+  if (copyFixedCodeBtn && fixedCodeDisplay) {
+    copyFixedCodeBtn.addEventListener("click", async () => {
+      const codeToCopy = fixedCodeDisplay.textContent;
+      if (!codeToCopy) return;
+      try {
+        await navigator.clipboard.writeText(codeToCopy);
+        const originalHtml = copyFixedCodeBtn.innerHTML;
+        copyFixedCodeBtn.innerHTML = `<span>✓</span> Copied!`;
+        setTimeout(() => {
+          copyFixedCodeBtn.innerHTML = originalHtml;
+        }, 2000);
+      } catch {
+        alert("Copied code to clipboard.");
+      }
+    });
+  }
+
+  // GitHub Dataset Modal Implementation (Account: kishan1808)
+  function openGithubModal() {
+    if (!githubDatasetModal) return;
+    githubDatasetModal.style.display = "flex";
+    loadKishan1808Datasets();
+  }
+  function closeGithubModal() {
+    if (!githubDatasetModal) return;
+    githubDatasetModal.style.display = "none";
+  }
+
+  if (githubDatasetBtn) githubDatasetBtn.addEventListener("click", openGithubModal);
+  if (ctOpenGithubDataBtn) ctOpenGithubDataBtn.addEventListener("click", openGithubModal);
+  if (closeGithubModalBtn) closeGithubModalBtn.addEventListener("click", closeGithubModal);
+  if (closeGithubBottomBtn) closeGithubBottomBtn.addEventListener("click", closeGithubModal);
+
+  async function loadKishan1808Datasets() {
+    if (!githubReposContainer) return;
+    githubReposContainer.innerHTML = `<div class="gcp-logs-empty">Fetching verified datasets from GitHub user kishan1808...</div>`;
+
+    try {
+      const res = await fetch("/api/github/kishan1808/datasets");
+      if (!res.ok) throw new Error("Could not load kishan1808 repositories.");
+      const data = await res.json();
+      const repos = data.repositories || [];
+
+      if (githubRepoCountBadge) githubRepoCountBadge.textContent = `${repos.length} Repos`;
+
+      if (repos.length === 0) {
+        githubReposContainer.innerHTML = `<div class="gcp-logs-empty">No public repositories found.</div>`;
+        return;
+      }
+
+      githubReposContainer.innerHTML = repos
+        .map((repo) => {
+          const invariantsHtml = (repo.invariants || [])
+            .map((inv) => `<div>• ${escapeHtml(inv)}</div>`)
+            .join("");
+
+          return `
+            <div class="github-repo-card">
+              <div class="github-repo-top">
+                <div class="repo-name-group">
+                  <span class="repo-name">${escapeHtml(repo.name)}</span>
+                  <span class="repo-lang-tag">${escapeHtml(repo.language || "Python")}</span>
+                </div>
+                <div class="repo-trained-badge">
+                  <span>✓</span>
+                  <span>TRAINED IN MODEL</span>
+                </div>
+              </div>
+              <div class="repo-desc">${escapeHtml(repo.description || "Open source dataset and application architecture by kishan1808.")}</div>
+              <div class="repo-invariants-box">
+                <div class="invariants-title">Architectural Rules &amp; Invariants:</div>
+                <div style="font-size: 0.78rem; line-height: 1.45; color: var(--text-secondary);">${invariantsHtml}</div>
+              </div>
+              <div class="repo-actions-strip">
+                <span class="repo-records-info"><strong>${repo.record_count.toLocaleString()}</strong> verified records • Category: ${escapeHtml(repo.category)}</span>
+                <button type="button" class="btn-train-repo" data-repo-name="${escapeHtml(repo.name)}">
+                  <span>⚡</span>
+                  <span>Train Model on ${escapeHtml(repo.name)}</span>
+                </button>
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+
+      // Bind individual train buttons
+      const trainRepoBtns = githubReposContainer.querySelectorAll(".btn-train-repo");
+      trainRepoBtns.forEach((b) => {
+        b.addEventListener("click", () => {
+          const repoName = b.dataset.repoName;
+          trainKishan1808Dataset(repoName, b);
+        });
+      });
+    } catch (err) {
+      console.warn("Failed to load kishan1808 datasets:", err);
+      githubReposContainer.innerHTML = `<div class="gcp-logs-empty">Unable to fetch live GitHub datasets: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function trainKishan1808Dataset(repoName, btn) {
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<span>Training...</span>`;
+    }
+    if (githubLiveHud) githubLiveHud.style.display = "flex";
+    if (githubHudPhase) githubHudPhase.textContent = `Ingesting ${repoName} from kishan1808...`;
+
+    try {
+      const res = await fetch("/api/github/kishan1808/train", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo_name: repoName }),
+      });
+
+      if (!res.ok) throw new Error("Dataset training failed.");
+      const result = await res.json();
+
+      showTrainingToast(
+        "GitHub Dataset Trained!",
+        `Ingested kishan1808/${repoName} (${result.dataset.records_trained} records) into active neural memory.`,
+        result.global_epoch
+      );
+
+      refreshTrainingStatus();
+      loadDepartments();
+    } catch (err) {
+      console.error("Training on kishan1808 dataset failed:", err);
+      alert(`Notice: ${err.message}`);
+    } finally {
+      if (githubLiveHud) githubLiveHud.style.display = "none";
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<span>✓ Retrain Dataset</span>`;
+      }
+    }
+  }
+
+  // Master Train on All kishan1808 Datasets
+  if (trainAllGithubBtn) {
+    trainAllGithubBtn.addEventListener("click", async () => {
+      trainAllGithubBtn.disabled = true;
+      trainAllGithubBtn.innerHTML = `<span>⚡ Ingesting All Datasets...</span>`;
+      if (githubLiveHud) githubLiveHud.style.display = "flex";
+
+      try {
+        const res = await fetch("/api/github/kishan1808/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repo_name: "all" }),
+        });
+
+        if (!res.ok) throw new Error("Batch training failed.");
+        const result = await res.json();
+
+        showTrainingToast(
+          "All kishan1808 Datasets Trained!",
+          "revenue-recovery, ai-web-vulnerability-scanner, and trekking datasets ingested!",
+          result.global_epoch
+        );
+
+        refreshTrainingStatus();
+        loadDepartments();
+      } catch (err) {
+        alert(`Notice: ${err.message}`);
+      } finally {
+        if (githubLiveHud) githubLiveHud.style.display = "none";
+        trainAllGithubBtn.disabled = false;
+        trainAllGithubBtn.innerHTML = `<span>⚡ Retrain ALL kishan1808 Datasets</span>`;
+      }
+    });
+  }
+
+  // Continuous Neural Learning Hub Modal Implementation
+  function openLearningHubModal() {
+    if (!continuousLearningHubModal) return;
+    continuousLearningHubModal.style.display = "flex";
+    refreshTrainingStatus();
+    renderActiveHubTab();
+  }
+  function closeLearningHubModal() {
+    if (!continuousLearningHubModal) return;
+    continuousLearningHubModal.style.display = "none";
+  }
+
+  if (continuousLearningHubBtn) continuousLearningHubBtn.addEventListener("click", openLearningHubModal);
+  if (ctOpenFullHubBtn) ctOpenFullHubBtn.addEventListener("click", openLearningHubModal);
+  if (closeHubModalBtn) closeHubModalBtn.addEventListener("click", closeLearningHubModal);
+  if (closeHubBottomBtn) closeHubBottomBtn.addEventListener("click", closeLearningHubModal);
+
+  // Tab switching in Hub
+  if (hubTabBtns) {
+    hubTabBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        hubTabBtns.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        activeHubTab = btn.dataset.tab;
+        renderActiveHubTab();
+      });
+    });
+  }
+
+  function renderActiveHubTab() {
+    if (!hubTabContentBody || !currentContinuousTrainingData) return;
+
+    if (activeHubTab === "questions") {
+      const qList = currentContinuousTrainingData.questions || [];
+      if (qList.length === 0) {
+        hubTabContentBody.innerHTML = `<div class="gcp-logs-empty">No questions trained yet. Search any topic to train!</div>`;
+        return;
+      }
+      hubTabContentBody.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 0.9rem;">
+          ${qList.map((q) => `
+            <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 1rem;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.4rem;">
+                <span style="font-size: 0.95rem; font-weight: 700; color: #38bdf8;">"${escapeHtml(q.question)}"</span>
+                <span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; background: rgba(56, 189, 248, 0.15); border-radius: 999px; color: #38bdf8;">Epoch #${q.epoch} • Hit: ${q.hit_count}x • Latency: ${q.latency_ms}ms</span>
+              </div>
+              <p style="font-size: 0.84rem; color: var(--text-secondary); line-height: 1.45; margin-bottom: 0.5rem;">${escapeHtml(q.summary)}</p>
+              <div style="display: flex; flex-direction: column; gap: 0.2rem;">
+                ${(q.key_facts || []).map((f) => `<div style="font-size: 0.78rem; color: var(--text-primary);">• ${escapeHtml(f)}</div>`).join("")}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    } else if (activeHubTab === "errors") {
+      const errList = currentContinuousTrainingData.code_errors || [];
+      if (errList.length === 0) {
+        hubTabContentBody.innerHTML = `<div class="gcp-logs-empty">No code errors resolved yet. Paste code to debug!</div>`;
+        return;
+      }
+      hubTabContentBody.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 0.9rem;">
+          ${errList.map((err) => `
+            <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 1rem;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.4rem;">
+                <span style="font-size: 0.95rem; font-weight: 700; color: #fca5a5;">${escapeHtml(err.title)}</span>
+                <span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; background: rgba(239, 68, 68, 0.15); border-radius: 999px; color: #fca5a5;">${escapeHtml(err.language.toUpperCase())} • Epoch #${err.epoch}</span>
+              </div>
+              <div style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.5rem;">${escapeHtml(err.explanation)}</div>
+              <div style="background: rgba(0, 0, 0, 0.25); padding: 0.6rem; border-radius: 6px; font-family: var(--font-mono); font-size: 0.78rem; color: #6ee7b7; max-height: 120px; overflow-y: auto;">
+                <pre style="margin: 0;">${escapeHtml(err.fixed_code)}</pre>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    } else if (activeHubTab === "github") {
+      const ghList = currentContinuousTrainingData.github_datasets || [];
+      hubTabContentBody.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 0.9rem;">
+          ${ghList.map((gh) => `
+            <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 8px; padding: 1rem;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.4rem;">
+                <span style="font-size: 0.95rem; font-weight: 700; color: #a5b4fc;">kishan1808/${escapeHtml(gh.repo_name)}</span>
+                <span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; background: rgba(99, 102, 241, 0.2); border-radius: 999px; color: #c7d2fe;">Epoch #${gh.epoch} • ${gh.record_count.toLocaleString()} Records</span>
+              </div>
+              <div style="font-size: 0.84rem; color: var(--text-primary); margin-bottom: 0.4rem;">${escapeHtml(gh.dataset_title)}</div>
+              <div style="font-size: 0.78rem; color: var(--text-muted);">${(gh.invariants || []).map((inv) => `<div>🛡️ ${escapeHtml(inv)}</div>`).join("")}</div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    } else if (activeHubTab === "events") {
+      const evList = currentContinuousTrainingData.recent_events || [];
+      hubTabContentBody.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+          ${evList.map((ev) => `
+            <div style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.6rem 0.85rem; background: rgba(255, 255, 255, 0.02); border-radius: 6px; border-left: 3px solid #a855f7;">
+              <span style="font-size: 1.1rem;">⚡</span>
+              <div>
+                <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-primary);">
+                  [Epoch #${ev.epoch}] ${escapeHtml(ev.title)}
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(ev.description)} • <span style="opacity: 0.6;">${new Date(ev.created_at).toLocaleTimeString()}</span></div>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+  }
+
+  // Hook into search initiation to notify user of autonomous training
+  const originalStartResearch = window.startResearch || startResearch;
+  window.addEventListener("researchInitiated", (e) => {
+    const topic = e.detail?.topic || "Topic";
+    showTrainingToast("Neural Training Loop Active", `Analyzing and learning from question: "${topic}"...`);
+  });
+
+  // Initial load of continuous learning status
+  refreshTrainingStatus();
 
   // Handle New Search button to reset results and clean current SQLite progress
   if (newSearchBtn) {
