@@ -499,6 +499,17 @@ document.addEventListener("DOMContentLoaded", () => {
       trained_epoch: data.trained_epoch || 1,
       status: "completed",
     };
+
+    // Synchronize browser URL with report ID for shareable direct links
+    if (data.id && window.history && window.history.replaceState) {
+      const currentQuery = new URLSearchParams(window.location.search);
+      if (currentQuery.get("id") !== String(data.id)) {
+        currentQuery.set("id", String(data.id));
+        const newUrl = `${window.location.pathname}?${currentQuery.toString()}`;
+        window.history.replaceState({ id: data.id, topic: data.topic }, "", newUrl);
+      }
+    }
+
     autoSaveCurrentProgress();
 
     // Continuous Training: Refresh metrics and show learning confirmation
@@ -842,12 +853,32 @@ document.addEventListener("DOMContentLoaded", () => {
   // -------------------------------------------------------------------------
   // 6. Export Features (PDF & Markdown)
   // -------------------------------------------------------------------------
-  downloadPdfBtn.addEventListener("click", async () => {
-    if (!currentResearchData) return;
+  const cardDownloadPdfBtn = document.getElementById("cardDownloadPdfBtn");
+  const footerDownloadPdfBtn = document.getElementById("footerDownloadPdfBtn");
 
-    downloadPdfBtn.disabled = true;
-    const origHtml = downloadPdfBtn.innerHTML;
-    downloadPdfBtn.innerHTML = '<span class="action-icon">⏳</span><span>Generating PDF...</span>';
+  async function handleDownloadPdf(triggerBtn = null) {
+    if (!currentResearchData || !currentResearchData.topic) {
+      if (typeof showTrainingToast === "function") {
+        showTrainingToast("Notice", "No research dossier loaded to download.");
+      }
+      return;
+    }
+
+    const allPdfButtons = [
+      downloadPdfBtn,
+      document.getElementById("cardDownloadPdfBtn"),
+      document.getElementById("footerDownloadPdfBtn"),
+    ].filter(Boolean);
+
+    allPdfButtons.forEach((btn) => {
+      btn.disabled = true;
+      btn.dataset.origHtml = btn.innerHTML;
+      const label = btn.querySelector(".copy-label") || btn.querySelector("span:not(.action-icon):not(.copy-icon)");
+      const icon = btn.querySelector(".copy-icon") || btn.querySelector(".action-icon");
+      if (icon) icon.textContent = "⏳";
+      if (label) label.textContent = "Generating PDF...";
+      btn.classList.add("loading");
+    });
 
     try {
       const response = await fetch("/download/pdf", {
@@ -857,26 +888,63 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to compile PDF document.");
+        throw new Error("Failed to compile formatted PDF document.");
       }
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const cleanName = currentResearchData.topic.slice(0, 30).replace(/[^a-zA-Z0-9_-]/g, "_");
+      const cleanName = (currentResearchData.topic || "Research_Report")
+        .slice(0, 30)
+        .replace(/[^a-zA-Z0-9_-]/g, "_");
       a.download = `Research_Report_${cleanName}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
+
+      if (typeof showTrainingToast === "function") {
+        showTrainingToast("PDF Downloaded", `Saved formatted research dossier: "${currentResearchData.topic.slice(0, 42)}..."`);
+      }
+
+      // Audit log to Google Cloud Logging
+      fetch("/api/logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          severity: "INFO",
+          component: "client.export",
+          message: `User downloaded research dossier as formatted PDF: "${currentResearchData.topic}"`,
+          payload: {
+            topic: currentResearchData.topic,
+            id: currentResearchData.id,
+            sources_count: (currentResearchData.sources || []).length,
+          },
+        }),
+      }).catch(() => {});
     } catch (err) {
       alert(`PDF Download Error: ${err.message}`);
     } finally {
-      downloadPdfBtn.disabled = false;
-      downloadPdfBtn.innerHTML = origHtml;
+      allPdfButtons.forEach((btn) => {
+        btn.disabled = false;
+        btn.classList.remove("loading");
+        if (btn.dataset.origHtml) {
+          btn.innerHTML = btn.dataset.origHtml;
+        }
+      });
     }
-  });
+  }
+
+  if (downloadPdfBtn) {
+    downloadPdfBtn.addEventListener("click", () => handleDownloadPdf(downloadPdfBtn));
+  }
+  if (cardDownloadPdfBtn) {
+    cardDownloadPdfBtn.addEventListener("click", () => handleDownloadPdf(cardDownloadPdfBtn));
+  }
+  if (footerDownloadPdfBtn) {
+    footerDownloadPdfBtn.addEventListener("click", () => handleDownloadPdf(footerDownloadPdfBtn));
+  }
 
   downloadMarkdownBtn.addEventListener("click", async () => {
     if (!currentResearchData) return;
@@ -966,90 +1034,120 @@ document.addEventListener("DOMContentLoaded", () => {
   const shareEmailBtn = document.getElementById("shareEmailBtn");
   const shareEmailIcon = document.getElementById("shareEmailIcon");
   const shareEmailLabel = document.getElementById("shareEmailLabel");
+  const footerShareEmailBtn = document.getElementById("footerShareEmailBtn");
 
-  if (shareEmailBtn) {
-    shareEmailBtn.addEventListener("click", () => {
-      if (!currentResearchData || !currentResearchData.topic) return;
+  function handleShareViaEmail(triggerBtn = null) {
+    if (!currentResearchData || !currentResearchData.topic) {
+      if (typeof showTrainingToast === "function") {
+        showTrainingToast("Notice", "No research dossier loaded to share.");
+      }
+      return;
+    }
 
-      const topic = currentResearchData.topic;
-      const createdAt = currentResearchData.created_at || "Recent";
-      const sources = currentResearchData.sources || [];
+    const topic = currentResearchData.topic;
+    const createdAt = currentResearchData.created_at || "Recent";
+    const sources = currentResearchData.sources || [];
+    const reportId = currentResearchData.id;
 
-      // Extract executive summary or first findings
-      let summaryText = "";
-      if (currentResearchData.report) {
-        const lines = currentResearchData.report.split("\n");
-        let capturing = false;
-        const summaryLines = [];
-        for (const line of lines) {
-          if (line.toLowerCase().includes("## executive summary")) {
-            capturing = true;
-            continue;
+    // Generate absolute direct link to this generated research report
+    const origin = window.location.origin || (window.location.protocol + "//" + window.location.host);
+    const pathname = window.location.pathname || "/";
+    const reportUrl = `${origin}${pathname}?id=${reportId || ""}`;
+
+    // Extract executive summary or key findings
+    let summaryText = "";
+    if (currentResearchData.report) {
+      const lines = currentResearchData.report.split("\n");
+      let capturing = false;
+      const summaryLines = [];
+      for (const line of lines) {
+        if (line.toLowerCase().includes("## executive summary")) {
+          capturing = true;
+          continue;
+        }
+        if (capturing) {
+          if (line.startsWith("## ") || line.startsWith("---")) {
+            break;
           }
-          if (capturing) {
-            if (line.startsWith("## ") || line.startsWith("---")) {
-              break;
-            }
-            if (line.trim()) {
-              summaryLines.push(line.trim());
-            }
+          if (line.trim()) {
+            summaryLines.push(line.trim());
           }
         }
-        summaryText = summaryLines.slice(0, 3).join("\n\n");
       }
+      summaryText = summaryLines.slice(0, 3).join("\n\n");
+    }
 
-      if (!summaryText) {
-        summaryText = currentResearchData.report
-          ? currentResearchData.report.slice(0, 350) + "..."
-          : "Full synthesis dossier prepared by ResearchAI.";
-      }
+    if (!summaryText) {
+      summaryText = currentResearchData.report
+        ? currentResearchData.report.slice(0, 320).replace(/[#*`_]/g, "") + "..."
+        : "Full synthesis dossier prepared by ResearchAI.";
+    }
 
-      // Format source citations
-      const sourcesSummary = sources
-        .slice(0, 4)
-        .map((s) => `• [${s.index}] ${s.title} (${s.domain})\n  Link: ${s.url}`)
-        .join("\n\n");
+    // Format top source citations
+    const sourcesSummary = sources
+      .slice(0, 3)
+      .map((s) => `• [${s.index}] ${s.title} (${s.domain || "web"})\n  ${s.url}`)
+      .join("\n\n");
 
-      const subject = `Research Dossier: ${topic}`;
-      const body = `Hi,\n\nHere is the synthesized research dossier on "${topic}" (${createdAt}):\n\nEXECUTIVE SUMMARY:\n${summaryText}\n\nKEY VERIFIED SOURCES:\n${sourcesSummary}\n\n---\nSynthesized autonomously by ResearchAI (Personal Research Assistant)\nAnti-hallucination grounding • Multi-agent verification`;
+    const subject = `Research Dossier: ${topic}`;
+    const body = `Hello,\n\nPlease review the synthesized research dossier on "${topic}".\n\nDIRECT REPORT LINK:\n${reportUrl}\n\nGenerated: ${createdAt}\nGrounding: Anti-Hallucination Verified\n\nEXECUTIVE SUMMARY:\n${summaryText}\n\nKEY VERIFIED SOURCES:\n${sourcesSummary || "See web dossier for full citations."}\n\n---\nSynthesized autonomously by ResearchAI (Personal Research Assistant)\nMulti-agent grounding & verification\nView online dossier: ${reportUrl}`;
 
-      const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
-      const a = document.createElement("a");
-      a.href = mailtoUrl;
-      a.target = "_blank";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+    const a = document.createElement("a");
+    a.href = mailtoUrl;
+    a.target = "_blank";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
 
-      // Audit log to Google Cloud Logging
-      fetch("/api/logs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          severity: "NOTICE",
-          component: "client.share",
-          message: `User shared research report via email client: "${topic}"`,
-          payload: {
-            topic,
-            sources_count: sources.length,
-            recipient_client: "default_mailer",
-          },
-        }),
-      }).catch(() => {});
+    // Audit log to Google Cloud Logging
+    fetch("/api/logs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        severity: "NOTICE",
+        component: "client.share",
+        message: `User shared research report via email client: "${topic}"`,
+        payload: {
+          topic,
+          id: reportId,
+          report_url: reportUrl,
+          sources_count: sources.length,
+          recipient_client: "default_mailer",
+        },
+      }),
+    }).catch(() => {});
 
-      // Visual feedback
-      if (shareEmailBtn) {
-        shareEmailBtn.classList.add("copied");
-        if (shareEmailIcon) shareEmailIcon.textContent = "✓";
-        if (shareEmailLabel) shareEmailLabel.textContent = "Email Opened!";
-        setTimeout(() => {
-          shareEmailBtn.classList.remove("copied");
-          if (shareEmailIcon) shareEmailIcon.textContent = "✉️";
-          if (shareEmailLabel) shareEmailLabel.textContent = "Share via Email";
-        }, 2200);
-      }
+    if (typeof showTrainingToast === "function") {
+      showTrainingToast("Email Client Opened", `Subject and report link prepared: ${reportUrl}`);
+    }
+
+    // Visual feedback on all share email buttons
+    const emailButtons = [
+      document.getElementById("shareEmailBtn"),
+      document.getElementById("footerShareEmailBtn"),
+    ].filter(Boolean);
+
+    emailButtons.forEach((btn) => {
+      btn.classList.add("copied");
+      const icon = btn.querySelector(".copy-icon") || btn.querySelector(".action-icon");
+      const label = btn.querySelector(".copy-label") || btn.querySelector("span:not(.action-icon):not(.copy-icon)");
+      if (icon) icon.textContent = "✓";
+      if (label) label.textContent = "Email Opened!";
+      setTimeout(() => {
+        btn.classList.remove("copied");
+        if (icon) icon.textContent = "✉️";
+        if (label) label.textContent = "Share via Email";
+      }, 2500);
     });
+  }
+
+  if (shareEmailBtn) {
+    shareEmailBtn.addEventListener("click", () => handleShareViaEmail(shareEmailBtn));
+  }
+  if (footerShareEmailBtn) {
+    footerShareEmailBtn.addEventListener("click", () => handleShareViaEmail(footerShareEmailBtn));
   }
 
   // -------------------------------------------------------------------------
@@ -3351,6 +3449,13 @@ def calculate_portfolio_var(
   // Initial load of continuous learning status
   refreshTrainingStatus();
 
+  // Handle shared report URL (?id=...)
+  const initialUrlParams = new URLSearchParams(window.location.search);
+  const sharedId = initialUrlParams.get("id");
+  if (sharedId) {
+    loadHistoryItem(sharedId);
+  }
+
   // Handle New Search button to reset results and clean current SQLite progress
   if (newSearchBtn) {
     newSearchBtn.addEventListener("click", () => {
@@ -3359,6 +3464,9 @@ def calculate_portfolio_var(
       topicInput.focus();
       hideError();
       currentResearchData = null;
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, "", window.location.pathname);
+      }
       currentProgressState = {
         topic: "",
         stage: 1,

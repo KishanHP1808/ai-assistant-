@@ -2853,7 +2853,35 @@ app.get("/api/history", (req, res) => {
 // API: History by ID
 app.get("/api/history/:id", (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const record = researchStore.find((r) => r.id === id);
+  let record = researchStore.find((r) => r.id === id);
+
+  if (!record && sqliteDb) {
+    try {
+      const row: any = sqliteDb.prepare("SELECT * FROM research_dossiers WHERE id = ?").get(id);
+      if (row) {
+        let parsedSources: any[] = [];
+        try {
+          parsedSources = JSON.parse(row.sources || "[]");
+        } catch {
+          parsedSources = [];
+        }
+        record = {
+          id: row.id,
+          topic: row.topic,
+          report: row.report,
+          sources: parsedSources,
+          created_at: row.created_at,
+          timestamp: row.timestamp,
+          department_code: row.department_code,
+          department_name: row.department_name,
+          trained_epoch: row.trained_epoch,
+        };
+      }
+    } catch (e: any) {
+      console.warn("SQLite lookup by ID error:", e.message);
+    }
+  }
+
   if (!record) {
     return res.status(404).json({ detail: "Research dossier not found in database." });
   }
@@ -3326,10 +3354,18 @@ app.post("/api/training/feedback", (req, res) => {
 
 // API: Download PDF
 app.post("/download/pdf", (req, res) => {
-  const { topic = "Research_Report", report = "", created_at = "" } = req.body || {};
+  const {
+    topic = "Research_Report",
+    report = "",
+    created_at = "",
+    sources = [],
+    department_code = "",
+    department_name = "",
+    trained_epoch = 1,
+  } = req.body || {};
 
   try {
-    const doc = new PDFDocument({ margin: 50, size: "LETTER" });
+    const doc = new PDFDocument({ margin: 48, size: "LETTER", bufferPages: true });
     const chunks: Buffer[] = [];
 
     doc.on("data", (chunk) => chunks.push(chunk));
@@ -3341,49 +3377,182 @@ app.post("/download/pdf", (req, res) => {
       res.send(result);
     });
 
-    // Styling & Content
-    doc.fillColor("#4f46e5").fontSize(10).font("Helvetica-Bold").text("RESEARCH DOSSIER", { characterSpacing: 1 });
-    doc.moveDown(0.3);
-    doc.fillColor("#0f172a").fontSize(20).font("Helvetica-Bold").text(topic);
-    doc.moveDown(0.2);
-    doc.fillColor("#64748b").fontSize(9).font("Helvetica").text(`Generated on ${created_at || "Recent"} • Powered by ResearchAI`);
-    doc.moveDown(0.8);
+    // Top Header Banner
+    doc.fillColor("#4f46e5").fontSize(9).font("Helvetica-Bold").text("RESEARCHAI  •  AUTONOMOUS RESEARCH DOSSIER", { characterSpacing: 1.2 });
+    doc.moveDown(0.35);
 
-    doc.strokeColor("#4f46e5").lineWidth(1.5).moveTo(50, doc.y).lineTo(560, doc.y).stroke();
-    doc.moveDown(1);
+    // Topic Heading
+    doc.fillColor("#0f172a").fontSize(20).font("Helvetica-Bold").text(topic, { lineGap: 2 });
+    doc.moveDown(0.3);
+
+    // Metadata Row
+    const metaParts = [`Generated: ${created_at || "Recent"}`];
+    if (department_name) {
+      metaParts.push(`Department: ${department_name} (${department_code})`);
+      metaParts.push(`Model Epoch: #${trained_epoch}`);
+    }
+    metaParts.push(`Grounding: Multi-Agent Verified`);
+
+    doc.fillColor("#64748b").fontSize(8.5).font("Helvetica").text(metaParts.join("  |  "));
+    doc.moveDown(0.65);
+
+    // Colored Accent Rule
+    doc.strokeColor("#4f46e5").lineWidth(1.5).moveTo(48, doc.y).lineTo(564, doc.y).stroke();
+    doc.moveDown(0.85);
 
     // Parse report markdown lines
     const lines = report.split("\n");
+    let inCodeBlock = false;
+    let codeBlockLines: string[] = [];
+
     for (const rawLine of lines) {
       const line = rawLine.trim();
-      if (!line) {
-        doc.moveDown(0.4);
+
+      // Handle Code Blocks
+      if (line.startsWith("```")) {
+        if (inCodeBlock) {
+          inCodeBlock = false;
+          const codeText = codeBlockLines.join("\n");
+          codeBlockLines = [];
+
+          if (codeText.trim()) {
+            const codeY = doc.y;
+            doc.font("Courier").fontSize(8);
+            const codeHeight = doc.heightOfString(codeText, { width: 500 }) + 10;
+            doc.fillColor("#f8fafc").rect(48, codeY, 516, codeHeight).fill();
+            doc.strokeColor("#e2e8f0").lineWidth(0.5).rect(48, codeY, 516, codeHeight).stroke();
+            doc.fillColor("#0f172a").text(codeText, 56, codeY + 5, { width: 500 });
+            doc.moveDown(0.6);
+          }
+        } else {
+          inCodeBlock = true;
+          codeBlockLines = [];
+        }
         continue;
+      }
+
+      if (inCodeBlock) {
+        codeBlockLines.push(rawLine);
+        continue;
+      }
+
+      if (!line) {
+        doc.moveDown(0.35);
+        continue;
+      }
+
+      // Prevent orphaned headings near bottom of page
+      if (doc.y > 690 && (line.startsWith("# ") || line.startsWith("## ") || line.startsWith("### "))) {
+        doc.addPage();
       }
 
       if (line.startsWith("# ")) {
         doc.moveDown(0.8);
-        doc.fillColor("#0f172a").fontSize(16).font("Helvetica-Bold").text(line.replace(/^#\s*/, ""));
-        doc.moveDown(0.4);
+        const headingText = line.replace(/^#\s*/, "").replace(/\*\*/g, "");
+        doc.fillColor("#0f172a").fontSize(15).font("Helvetica-Bold").text(headingText);
+        doc.moveDown(0.3);
       } else if (line.startsWith("## ")) {
         doc.moveDown(0.6);
-        doc.fillColor("#1e293b").fontSize(13).font("Helvetica-Bold").text(line.replace(/^##\s*/, ""));
-        doc.moveDown(0.3);
+        const headingText = line.replace(/^##\s*/, "").replace(/\*\*/g, "");
+        doc.fillColor("#1e293b").fontSize(12.5).font("Helvetica-Bold").text(headingText);
+        doc.strokeColor("#cbd5e1").lineWidth(0.5).moveTo(48, doc.y + 2).lineTo(564, doc.y + 2).stroke();
+        doc.moveDown(0.35);
       } else if (line.startsWith("### ")) {
-        doc.moveDown(0.4);
-        doc.fillColor("#334155").fontSize(11).font("Helvetica-Bold").text(line.replace(/^###\s*/, ""));
+        doc.moveDown(0.45);
+        const headingText = line.replace(/^###\s*/, "").replace(/\*\*/g, "");
+        doc.fillColor("#334155").fontSize(10.5).font("Helvetica-Bold").text(headingText);
         doc.moveDown(0.2);
+      } else if (line.startsWith("#### ")) {
+        doc.moveDown(0.35);
+        const headingText = line.replace(/^####\s*/, "").replace(/\*\*/g, "");
+        doc.fillColor("#475569").fontSize(9.5).font("Helvetica-Bold").text(headingText);
+        doc.moveDown(0.15);
+      } else if (line.startsWith("> ")) {
+        // Blockquote callout
+        const quoteText = line.replace(/^>\s*/, "").replace(/\*\*/g, "");
+        const quoteY = doc.y;
+        doc.font("Helvetica-Oblique").fontSize(9);
+        const quoteHeight = doc.heightOfString(quoteText, { width: 490 }) + 4;
+        doc.strokeColor("#6366f1").lineWidth(2.5).moveTo(52, quoteY).lineTo(52, quoteY + quoteHeight).stroke();
+        doc.fillColor("#475569").text(quoteText, 62, quoteY + 2, { width: 490 });
+        doc.moveDown(0.4);
       } else if (line.startsWith("- ") || line.startsWith("* ")) {
-        doc.fillColor("#334155").fontSize(9.5).font("Helvetica").text(`• ${line.replace(/^[-*]\s*/, "")}`, { indent: 10 });
+        // Bullet item
+        const bulletText = line.replace(/^[-*]\s*/, "").replace(/\*\*/g, "");
+        doc.fillColor("#4f46e5").fontSize(9).font("Helvetica-Bold").text("•", 52, doc.y, { continued: true });
+        doc.fillColor("#1e293b").fontSize(9).font("Helvetica").text(`  ${bulletText}`, { lineGap: 2.5 });
+        doc.moveDown(0.2);
+      } else if (/^\d+\.\s/.test(line)) {
+        // Numbered list item
+        const numMatch = line.match(/^(\d+\.)\s*(.*)/);
+        const num = numMatch ? numMatch[1] : "•";
+        const numText = (numMatch ? numMatch[2] : line).replace(/\*\*/g, "");
+        doc.fillColor("#4f46e5").fontSize(9).font("Helvetica-Bold").text(`${num}`, 52, doc.y, { continued: true });
+        doc.fillColor("#1e293b").fontSize(9).font("Helvetica").text(`  ${numText}`, { lineGap: 2.5 });
         doc.moveDown(0.2);
       } else if (line === "---" || line === "***") {
-        doc.moveDown(0.5);
-        doc.strokeColor("#e2e8f0").lineWidth(0.5).moveTo(50, doc.y).lineTo(560, doc.y).stroke();
-        doc.moveDown(0.5);
+        doc.moveDown(0.4);
+        doc.strokeColor("#e2e8f0").lineWidth(0.5).moveTo(48, doc.y).lineTo(564, doc.y).stroke();
+        doc.moveDown(0.4);
       } else {
-        doc.fillColor("#1e293b").fontSize(9.5).font("Helvetica").text(line);
+        // Clean markdown inline bold/italic
+        const cleanParagraph = line.replace(/\*\*/g, "");
+        doc.fillColor("#1e293b").fontSize(9).font("Helvetica").text(cleanParagraph, { lineGap: 3 });
         doc.moveDown(0.3);
       }
+    }
+
+    // Sources Appendix Section
+    if (sources && Array.isArray(sources) && sources.length > 0) {
+      if (doc.y > 580) {
+        doc.addPage();
+      } else {
+        doc.moveDown(0.8);
+      }
+
+      doc.fillColor("#0f172a").fontSize(13).font("Helvetica-Bold").text("Verified Grounding Sources");
+      doc.fillColor("#64748b").fontSize(8.5).font("Helvetica").text("The following authoritative sources were cross-referenced and verified during autonomous multi-agent synthesis:");
+      doc.moveDown(0.5);
+
+      for (const s of sources) {
+        if (doc.y > 680) doc.addPage();
+
+        // Source Title & Index
+        doc.fillColor("#1e293b").fontSize(9.5).font("Helvetica-Bold").text(`[${s.index || 1}] ${s.title || "Reference Source"}`);
+        if (s.domain) {
+          doc.fillColor("#64748b").fontSize(8).font("Helvetica").text(`Domain: ${s.domain}`);
+        }
+        if (s.url) {
+          doc.fillColor("#2563eb").fontSize(8.5).font("Helvetica").text(s.url, { link: s.url, underline: true });
+        }
+        if (s.snippet) {
+          doc.fillColor("#475569").fontSize(8).font("Helvetica-Oblique").text(`"${s.snippet.slice(0, 220)}..."`, { lineGap: 2 });
+        }
+        doc.strokeColor("#f1f5f9").lineWidth(0.5).moveTo(48, doc.y + 3).lineTo(564, doc.y + 3).stroke();
+        doc.moveDown(0.4);
+      }
+    }
+
+    // Global Header & Footer across all pages
+    const range = doc.bufferedPageRange();
+    for (let i = range.start; i < range.start + range.count; i++) {
+      doc.switchToPage(i);
+
+      // Running top header on page 2+
+      if (i > range.start) {
+        doc.fontSize(7.5).font("Helvetica-Bold").fillColor("#6366f1").text("RESEARCHAI", 48, 24, { continued: true });
+        doc.font("Helvetica").fillColor("#94a3b8").text(`  |  ${topic.slice(0, 65)}...`, { align: "left" });
+        doc.strokeColor("#e2e8f0").lineWidth(0.5).moveTo(48, 36).lineTo(564, 36).stroke();
+      }
+
+      // Running bottom footer on all pages
+      doc.strokeColor("#e2e8f0").lineWidth(0.5).moveTo(48, 742).lineTo(564, 742).stroke();
+      doc.fontSize(7.5).font("Helvetica").fillColor("#94a3b8").text(
+        `Page ${i + 1} of ${range.count}  •  ResearchAI Autonomous Research Dossier  •  Anti-Hallucination Grounding`,
+        48,
+        748,
+        { align: "center", width: 516 }
+      );
     }
 
     doc.end();

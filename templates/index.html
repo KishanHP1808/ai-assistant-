@@ -736,6 +736,10 @@
                 </span>
               </div>
               <div class="report-card-actions">
+                <button type="button" class="btn-copy-report btn-card-pdf" id="cardDownloadPdfBtn" title="Download research dossier as formatted PDF">
+                  <span class="copy-icon" id="cardPdfIcon">📄</span>
+                  <span class="copy-label" id="cardPdfLabel">Download PDF</span>
+                </button>
                 <button type="button" class="btn-copy-report" id="copyReportBtn" title="Copy full report to clipboard">
                   <span class="copy-icon" id="copyReportIcon">📋</span>
                   <span class="copy-label" id="copyReportLabel">Copy to Clipboard</span>
@@ -888,6 +892,27 @@
             <div class="report-chart-card-footer" id="reportChartCardFooter">
               <div id="rechartsSynthesisContainer">
                 <!-- Dynamic Line Chart rendered by Recharts -->
+              </div>
+            </div>
+
+            <!-- Dossier Viewer Footer Actions Bar -->
+            <div class="report-viewer-footer-actions" id="reportViewerFooterActions">
+              <div class="dossier-signoff">
+                <span class="signoff-shield">🛡️</span>
+                <div class="signoff-text">
+                  <span class="signoff-primary">ResearchAI Autonomous Research Dossier</span>
+                  <span class="signoff-secondary">Grounded with Multi-Agent Verification • Save as formatted PDF or share report</span>
+                </div>
+              </div>
+              <div class="dossier-footer-buttons">
+                <button type="button" class="btn-footer-action btn-footer-pdf" id="footerDownloadPdfBtn" title="Download research dossier as formatted PDF">
+                  <span class="action-icon">📄</span>
+                  <span>Download PDF</span>
+                </button>
+                <button type="button" class="btn-footer-action btn-footer-email" id="footerShareEmailBtn" title="Share research dossier via Email">
+                  <span class="action-icon">✉️</span>
+                  <span>Share via Email</span>
+                </button>
               </div>
             </div>
           </article>
