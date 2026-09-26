@@ -6,7 +6,10 @@
     "esModuleInterop": true,
     "strict": false,
     "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "jsx": "react-jsx",
     "noEmit": true
   },
-  "include": ["server.ts"]
+  "include": ["server.ts", "src/**/*"]
 }

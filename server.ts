@@ -6,6 +6,15 @@ import PDFDocument from "pdfkit";
 import { GoogleGenAI } from "@google/genai";
 // @ts-ignore
 import { DatabaseSync } from "node:sqlite";
+import { requireAuth, optionalAuth, AuthRequest } from "./src/middleware/auth.ts";
+import { getOrCreateUser, getUserByUid } from "./src/db/users.ts";
+import {
+  saveDossierToCloudSQL,
+  getCloudSQLDossiers,
+  getCloudSQLDossierById,
+  saveTrainingEventToCloudSQL,
+} from "./src/db/dossiers.ts";
+import firebaseConfig from "./firebase-applet-config.json" with { type: "json" };
 
 dotenv.config();
 
@@ -2620,6 +2629,19 @@ async function executeResearchPipeline(
   saveStore();
   saveDossierToSQLite(newRecord);
 
+  // Asynchronously persist to Cloud SQL PostgreSQL database
+  saveDossierToCloudSQL({
+    topic: newRecord.topic,
+    report: newRecord.report,
+    sources: newRecord.sources,
+    departmentCode: newRecord.department_code,
+    departmentName: newRecord.department_name,
+    trainedEpoch: newRecord.trained_epoch,
+    createdAt: newRecord.created_at,
+  }).catch((cloudSqlErr) => {
+    console.warn("Cloud SQL background persist notice:", cloudSqlErr?.message);
+  });
+
   // Mark active progress in SQLite as completed
   saveProgressToSQLite({
     id: "current_session",
@@ -2836,8 +2858,70 @@ app.get("/api/status", (req, res) => {
   res.json(getSystemStatus());
 });
 
+// API: Public Firebase Client Configuration
+app.get("/api/firebase-config", (req, res) => {
+  res.json({
+    projectId: firebaseConfig.projectId,
+    apiKey: firebaseConfig.apiKey,
+    authDomain: firebaseConfig.authDomain,
+    appId: firebaseConfig.appId,
+    messagingSenderId: firebaseConfig.messagingSenderId,
+    storageBucket: firebaseConfig.storageBucket,
+  });
+});
+
+// API: Auth Sync (Firebase Auth to Cloud SQL Users table)
+app.post("/api/auth/sync", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = req.user!;
+    const dbUser = await getOrCreateUser(
+      user.uid,
+      user.email || `${user.uid}@auth.local`,
+      user.name,
+      user.picture
+    );
+    res.json({ success: true, user: dbUser });
+  } catch (error: any) {
+    console.error("Auth sync error:", error);
+    res.status(500).json({ error: error.message || "Failed to sync user" });
+  }
+});
+
+// API: Current Authenticated User Profile
+app.get("/api/auth/me", optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.json({ authenticated: false, user: null });
+    }
+    const dbUser = await getUserByUid(req.user.uid);
+    res.json({ authenticated: true, user: dbUser || req.user });
+  } catch (error: any) {
+    console.error("Auth me error:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch user" });
+  }
+});
+
 // API: History
-app.get("/api/history", (req, res) => {
+app.get("/api/history", async (req, res) => {
+  try {
+    const cloudSqlRecords = await getCloudSQLDossiers(15);
+    if (cloudSqlRecords && cloudSqlRecords.length > 0) {
+      const records = cloudSqlRecords.map((r) => ({
+        id: r.id,
+        topic: r.topic,
+        created_at: r.created_at,
+        snippet: r.report ? r.report.slice(0, 180) + "..." : "",
+      }));
+      return res.json({
+        records,
+        database: "Cloud SQL PostgreSQL (asia-southeast1)",
+      });
+    }
+  } catch (sqlErr: any) {
+    console.warn("Cloud SQL history fallback notice:", sqlErr?.message);
+  }
+
+  // Fallback to in-memory / SQLite history
   const records = researchStore.slice(0, 15).map((r) => ({
     id: r.id,
     topic: r.topic,
@@ -2851,10 +2935,23 @@ app.get("/api/history", (req, res) => {
 });
 
 // API: History by ID
-app.get("/api/history/:id", (req, res) => {
+app.get("/api/history/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
+
+  // 1. Try Cloud SQL first
+  try {
+    const cloudSqlRecord = await getCloudSQLDossierById(id);
+    if (cloudSqlRecord) {
+      return res.json(cloudSqlRecord);
+    }
+  } catch (sqlErr: any) {
+    console.warn("Cloud SQL get by id notice:", sqlErr?.message);
+  }
+
+  // 2. Try in-memory store
   let record = researchStore.find((r) => r.id === id);
 
+  // 3. Try SQLite fallback
   if (!record && sqliteDb) {
     try {
       const row: any = sqliteDb.prepare("SELECT * FROM research_dossiers WHERE id = ?").get(id);

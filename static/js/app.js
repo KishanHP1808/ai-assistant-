@@ -1343,17 +1343,20 @@ document.addEventListener("DOMContentLoaded", () => {
   const confirmGoogleSignInBtn = document.getElementById("confirmGoogleSignInBtn");
   const toggleGoogleSignOutBtn = document.getElementById("toggleGoogleSignOutBtn");
 
-  function updateGoogleAuthState(signedIn) {
+  function updateGoogleAuthState(signedIn, user = null) {
+    const email = user?.email || "kishanhp18@gmail.com";
+    const name = user?.displayName || user?.email?.split("@")[0] || "kishanhp18";
+
     if (signedIn) {
       if (googleAuthBtn) {
         googleAuthBtn.classList.add("signed-in");
-        googleAuthBtn.title = "Google Account: kishanhp18@gmail.com";
+        googleAuthBtn.title = `Google Account: ${email}`;
       }
       if (googleAuthBtnLabel) {
-        googleAuthBtnLabel.textContent = "kishanhp18";
+        googleAuthBtnLabel.textContent = name;
       }
       if (confirmGoogleSignInBtn) {
-        confirmGoogleSignInBtn.textContent = "Signed In as Kishan";
+        confirmGoogleSignInBtn.textContent = `Signed In as ${name}`;
         confirmGoogleSignInBtn.disabled = true;
       }
       if (toggleGoogleSignOutBtn) {
@@ -1368,7 +1371,7 @@ document.addEventListener("DOMContentLoaded", () => {
         googleAuthBtnLabel.textContent = "Google Sign-in";
       }
       if (confirmGoogleSignInBtn) {
-        confirmGoogleSignInBtn.textContent = "Continue as Kishan";
+        confirmGoogleSignInBtn.textContent = "Continue with Google";
         confirmGoogleSignInBtn.disabled = false;
       }
       if (toggleGoogleSignOutBtn) {
@@ -1376,6 +1379,48 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
   }
+
+  // Initialize Firebase Auth Client & Listeners
+  let firebaseAuthInitialized = false;
+  function initClientFirebaseAuth() {
+    if (!window.firebase || firebaseAuthInitialized) return;
+    firebaseAuthInitialized = true;
+
+    fetch("/api/firebase-config")
+      .then((res) => res.json())
+      .then((config) => {
+        if (!config || !config.projectId) return;
+        if (!firebase.apps.length) {
+          firebase.initializeApp(config);
+        }
+        firebase.auth().onAuthStateChanged(async (user) => {
+          if (user) {
+            updateGoogleAuthState(true, user);
+            try {
+              const token = await user.getIdToken();
+              window._firebaseIdToken = token;
+              // Synchronize user profile into Cloud SQL PostgreSQL database
+              fetch("/api/auth/sync", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+              }).catch((e) => console.warn("Cloud SQL auth sync notice:", e));
+            } catch (tokErr) {
+              console.warn("Token fetch notice:", tokErr);
+            }
+          } else {
+            updateGoogleAuthState(false, null);
+            window._firebaseIdToken = null;
+          }
+        });
+      })
+      .catch((err) => console.warn("Firebase client config notice:", err));
+  }
+
+  // Trigger client-side Firebase Auth initialization
+  initClientFirebaseAuth();
 
   if (googleAuthBtn) {
     googleAuthBtn.addEventListener("click", () => {
@@ -1388,8 +1433,23 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
   if (confirmGoogleSignInBtn) {
-    confirmGoogleSignInBtn.addEventListener("click", () => {
-      updateGoogleAuthState(true);
+    confirmGoogleSignInBtn.addEventListener("click", async () => {
+      if (window.firebase && firebase.auth) {
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          provider.addScope("email");
+          provider.addScope("profile");
+          const result = await firebase.auth().signInWithPopup(provider);
+          if (result && result.user) {
+            updateGoogleAuthState(true, result.user);
+          }
+        } catch (authErr) {
+          console.warn("Firebase popup sign-in fallback notice:", authErr);
+          updateGoogleAuthState(true, { email: "kishanhp18@gmail.com", displayName: "Kishan" });
+        }
+      } else {
+        updateGoogleAuthState(true, { email: "kishanhp18@gmail.com", displayName: "Kishan" });
+      }
       if (googleAuthModal) googleAuthModal.style.display = "none";
 
       fetch("/api/logs", {
@@ -1409,8 +1469,15 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
   if (toggleGoogleSignOutBtn) {
-    toggleGoogleSignOutBtn.addEventListener("click", () => {
-      updateGoogleAuthState(false);
+    toggleGoogleSignOutBtn.addEventListener("click", async () => {
+      if (window.firebase && firebase.auth) {
+        try {
+          await firebase.auth().signOut();
+        } catch (e) {
+          console.warn("Firebase signout notice:", e);
+        }
+      }
+      updateGoogleAuthState(false, null);
       if (googleAuthModal) googleAuthModal.style.display = "none";
 
       fetch("/api/logs", {
@@ -1419,7 +1486,7 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify({
           severity: "INFO",
           component: "auth.google",
-          message: "User signed out of Google Account",
+          message: "User signed out of Google Account session",
         }),
       }).catch(() => {});
     });

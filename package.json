@@ -12,8 +12,13 @@
   "dependencies": {
     "@google/genai": "*",
     "dotenv": "^16.4.7",
+    "drizzle-kit": "^0.31.11",
+    "drizzle-orm": "^0.45.3",
     "express": "^4.21.2",
+    "firebase": "^12.19.0",
+    "firebase-admin": "^14.5.0",
     "pdfkit": "^0.16.0",
+    "pg": "^8.23.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "recharts": "^3.10.1"
@@ -22,6 +27,7 @@
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.2",
     "@types/pdfkit": "^0.13.8",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "esbuild": "^0.24.2",
